@@ -1,3 +1,4 @@
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/c34b6a89a2704b9daab46638cba11dfd)](https://www.codacy.com/app/yshurik/BitBay?utm_source=github.com&utm_medium=referral&utm_content=yshurik/BitBay&utm_campaign=badger)
 [![Build Status](https://travis-ci.org/bitbaymarket/bitbay-core.svg?branch=master)](https://travis-ci.org/bitbaymarket/bitbay-core)
 [![Build status](https://ci.appveyor.com/api/projects/status/qdy7pilwdtxehqhw?svg=true)](https://ci.appveyor.com/project/yshurik/bitbay-core)
 
