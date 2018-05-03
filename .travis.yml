@@ -268,7 +268,7 @@ script:
     mkdir -p bitbayd_mac                                            &&
     cp BitBay-Wallet-Qt.app/Contents/MacOS/bitbayd bitbayd_mac/     &&
     cp BitBay-Wallet-Qt.app/Contents/Frameworks/libdb_cxx-4.8.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libminiupnpc.16.dylib bitbayd_mac/ &&
+    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libminiupnpc.17.dylib bitbayd_mac/ &&
     cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_thread-mt.dylib bitbayd_mac/ &&
     cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_system-mt.dylib bitbayd_mac/ &&
     cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_filesystem-mt.dylib bitbayd_mac/ &&
@@ -276,7 +276,7 @@ script:
     cp BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib bitbayd_mac/ &&
     cp BitBay-Wallet-Qt.app/Contents/Frameworks/libcrypto.1.0.0.dylib bitbayd_mac/ &&
     install_name_tool -id libdb_cxx-4.8.dylib bitbayd_mac/libdb_cxx-4.8.dylib &&
-    install_name_tool -id libminiupnpc.16.dylib bitbayd_mac/libminiupnpc.16.dylib &&
+    install_name_tool -id libminiupnpc.17.dylib bitbayd_mac/libminiupnpc.17.dylib &&
     install_name_tool -id libboost_thread-mt.dylib bitbayd_mac/libboost_thread-mt.dylib &&
     install_name_tool -id libboost_system-mt.dylib bitbayd_mac/libboost_system-mt.dylib &&
     install_name_tool -id libboost_filesystem-mt.dylib bitbayd_mac/libboost_filesystem-mt.dylib &&
@@ -295,8 +295,8 @@ script:
         bitbayd_mac/bitbayd &&
     install_name_tool \
         -change \
-        @loader_path/../Frameworks/libminiupnpc.16.dylib \
-        @loader_path/libminiupnpc.16.dylib \
+        @loader_path/../Frameworks/libminiupnpc.17.dylib \
+        @loader_path/libminiupnpc.17.dylib \
         bitbayd_mac/bitbayd &&
     install_name_tool \
         -change \
