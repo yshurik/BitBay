@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <boost/assign/list_of.hpp>
+#include <string>
 
 #include "base58.h"
 #include "rpcserver.h"
@@ -79,6 +80,7 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
         Object out;
         out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
         out.push_back(Pair("valueint", txout.nValue));
+        out.push_back(Pair("valuestr", std::to_string(txout.nValue)));
         out.push_back(Pair("n", (int64_t)i));
         Object o;
         ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
