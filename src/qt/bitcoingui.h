@@ -15,6 +15,7 @@ class AddressBookPage;
 class SendCoinsDialog;
 class SignMessagePage;
 class VerifyMessagePage;
+class BlockchainPage;
 class SignVerifyMessageDialog;
 class Notificator;
 class RPCConsole;
@@ -68,7 +69,10 @@ private:
     SendCoinsDialog *sendCoinsPage;
     SignMessagePage *signMessagePage;
     VerifyMessagePage *verifyMessagePage;
+    BlockchainPage *infoPage;
 
+    QLabel *lastBlockLabel;
+    QLabel *lastBlockPegSupplyLabel;
     QLabel *labelEncryptionIcon;
     QLabel *labelStakingIcon;
     QLabel *labelConnectionsIcon;
@@ -104,6 +108,7 @@ private:
     QToolButton * tabAddresses = nullptr;
     QToolButton * tabSign = nullptr;
     QToolButton * tabVerify = nullptr;
+    QToolButton * tabInfo = nullptr;
 
     QSystemTrayIcon *trayIcon;
     Notificator *notificator;
@@ -128,6 +133,10 @@ public slots:
     void setNumConnections(int count);
     /** Set number of blocks shown in the UI */
     void setNumBlocks(int count);
+    /** Returns text for time behind */
+    QString timeBehindText(int secs);
+    /** Update number of blocks shown in the UI */
+    void updateNumBlocksLabel();
     /** Set the encryption status as shown in the UI.
        @param[in] status            current encryption status
        @see WalletModel::EncryptionStatus
@@ -168,6 +177,8 @@ private slots:
     void gotoSignMessagePage();
     /** Switch to verify message page */
     void gotoVerifyMessagePage();
+    /** Switch to info page */
+    void gotoInfoPage();
 
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");

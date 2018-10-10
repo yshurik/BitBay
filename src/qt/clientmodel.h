@@ -2,6 +2,7 @@
 #define CLIENTMODEL_H
 
 #include <QObject>
+#include <boost/tuple/tuple.hpp>
 
 class OptionsModel;
 class AddressTableModel;

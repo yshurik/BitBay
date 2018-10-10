@@ -16,7 +16,7 @@ macx:QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
 INCLUDEPATH += src src/json src/qt $$PWD
 QT += network
 DEFINES += ENABLE_WALLET
-DEFINES += BOOST_THREAD_USE_LIB 
+DEFINES += BOOST_THREAD_USE_LIB
 DEFINES += BOOST_SPIRIT_THREADSAFE
 DEFINES += BOOST_NO_CXX11_SCOPED_ENUMS
 CONFIG += no_include_pwd
@@ -106,6 +106,7 @@ contains(BITCOIN_NEED_QT_PLUGINS, 1) {
 
 INCLUDEPATH += src/leveldb/include src/leveldb/helpers
 LIBS += $$PWD/src/leveldb/out-static/libleveldb.a $$PWD/src/leveldb/out-static/libmemenv.a
+HEADERS += src/txdb-leveldb.h
 SOURCES += src/txdb-leveldb.cpp
 !win32 {
     # we use QMAKE_CXXFLAGS_RELEASE even without RELEASE=1 because we use RELEASE to indicate linking preferences not -O preferences
@@ -154,21 +155,15 @@ contains(USE_O3, 1) {
 
 QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wno-ignored-qualifiers -Wformat -Wformat-security -Wno-unused-parameter -Wstack-protector
 
+#json lib
+include(src/json/json.pri)
+
+#qt gui
+include(src/qt/qt.pri)
+
 # Input
 DEPENDPATH += src src/json src/qt
-HEADERS += src/qt/bitcoingui.h \
-    src/qt/transactiontablemodel.h \
-    src/qt/addresstablemodel.h \
-    src/qt/optionsdialog.h \
-    src/qt/coincontroldialog.h \
-    src/qt/coincontroltreewidget.h \
-    src/qt/sendcoinsdialog.h \
-    src/qt/addressbookpage.h \
-    src/qt/signmessagepage.h \
-    src/qt/verifymessagepage.h \
-    src/qt/aboutdialog.h \
-    src/qt/editaddressdialog.h \
-    src/qt/bitcoinaddressvalidator.h \
+HEADERS += \
     src/alert.h \
     src/addrman.h \
     src/base58.h \
@@ -198,67 +193,23 @@ HEADERS += src/qt/bitcoingui.h \
     src/script.h \
     src/init.h \
     src/mruset.h \
-    src/json/json_spirit_writer_template.h \
-    src/json/json_spirit_writer.h \
-    src/json/json_spirit_value.h \
-    src/json/json_spirit_utils.h \
-    src/json/json_spirit_stream_reader.h \
-    src/json/json_spirit_reader_template.h \
-    src/json/json_spirit_reader.h \
-    src/json/json_spirit_error_position.h \
-    src/json/json_spirit.h \
-    src/qt/clientmodel.h \
-    src/qt/guiutil.h \
-    src/qt/transactionrecord.h \
-    src/qt/guiconstants.h \
-    src/qt/optionsmodel.h \
-    src/qt/monitoreddatamapper.h \
-    src/qt/trafficgraphwidget.h \
-    src/qt/transactiondesc.h \
-    src/qt/transactiondescdialog.h \
-    src/qt/bitcoinamountfield.h \
     src/wallet.h \
     src/keystore.h \
-    src/qt/transactionfilterproxy.h \
-    src/qt/transactionview.h \
-    src/qt/walletmodel.h \
     src/rpcclient.h \
     src/rpcprotocol.h \
     src/rpcserver.h \
     src/timedata.h \
-    src/qt/overviewpage.h \
-    src/qt/csvmodelwriter.h \
     src/crypter.h \
-    src/qt/sendcoinsentry.h \
-    src/qt/qvalidatedlineedit.h \
-    src/qt/bitcoinunits.h \
-    src/qt/qvaluecombobox.h \
-    src/qt/askpassphrasedialog.h \
     src/protocol.h \
-    src/qt/notificator.h \
-    src/qt/paymentserver.h \
     src/allocators.h \
     src/ui_interface.h \
-    src/qt/rpcconsole.h \
     src/version.h \
     src/netbase.h \
     src/clientversion.h \
     src/threadsafety.h \
     src/tinyformat.h
 
-SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
-    src/qt/transactiontablemodel.cpp \
-    src/qt/addresstablemodel.cpp \
-    src/qt/optionsdialog.cpp \
-    src/qt/sendcoinsdialog.cpp \
-    src/qt/coincontroldialog.cpp \
-    src/qt/coincontroltreewidget.cpp \
-    src/qt/addressbookpage.cpp \
-    src/qt/signmessagepage.cpp \
-    src/qt/verifymessagepage.cpp \
-    src/qt/aboutdialog.cpp \
-    src/qt/editaddressdialog.cpp \
-    src/qt/bitcoinaddressvalidator.cpp \
+SOURCES += \
     src/alert.cpp \
     src/chainparams.cpp \
     src/version.cpp \
@@ -278,21 +229,8 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/addrman.cpp \
     src/db.cpp \
     src/walletdb.cpp \
-    src/qt/clientmodel.cpp \
-    src/qt/guiutil.cpp \
-    src/qt/transactionrecord.cpp \
-    src/qt/optionsmodel.cpp \
-    src/qt/monitoreddatamapper.cpp \
-    src/qt/trafficgraphwidget.cpp \
-    src/qt/transactiondesc.cpp \
-    src/qt/transactiondescdialog.cpp \
-    src/qt/bitcoinstrings.cpp \
-    src/qt/bitcoinamountfield.cpp \
     src/wallet.cpp \
     src/keystore.cpp \
-    src/qt/transactionfilterproxy.cpp \
-    src/qt/transactionview.cpp \
-    src/qt/walletmodel.cpp \
     src/rpcclient.cpp \
     src/rpcprotocol.cpp \
     src/rpcserver.cpp \
@@ -304,18 +242,8 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/rpcblockchain.cpp \
     src/rpcrawtransaction.cpp \
     src/timedata.cpp \
-    src/qt/overviewpage.cpp \
-    src/qt/csvmodelwriter.cpp \
     src/crypter.cpp \
-    src/qt/sendcoinsentry.cpp \
-    src/qt/qvalidatedlineedit.cpp \
-    src/qt/bitcoinunits.cpp \
-    src/qt/qvaluecombobox.cpp \
-    src/qt/askpassphrasedialog.cpp \
     src/protocol.cpp \
-    src/qt/notificator.cpp \
-    src/qt/paymentserver.cpp \
-    src/qt/rpcconsole.cpp \
     src/noui.cpp \
     src/kernel.cpp \
     src/scrypt-arm.S \
@@ -324,36 +252,11 @@ SOURCES += src/qt/bitcoin.cpp src/qt/bitcoingui.cpp \
     src/scrypt.cpp \
     src/pbkdf2.cpp
 
-RESOURCES += \
-    src/qt/bitbay.qrc \
-    src/qt/bitbayfonts.qrc \
-
-FORMS += \
-    src/qt/forms/coincontroldialog.ui \
-    src/qt/forms/sendcoinsdialog.ui \
-    src/qt/forms/addressbookpage.ui \
-    src/qt/forms/signmessagepage.ui \
-    src/qt/forms/verifymessagepage.ui \
-    src/qt/forms/aboutdialog.ui \
-    src/qt/forms/editaddressdialog.ui \
-    src/qt/forms/transactiondescdialog.ui \
-    src/qt/forms/overviewpage.ui \
-    src/qt/forms/sendcoinsentry.ui \
-    src/qt/forms/askpassphrasedialog.ui \
-    src/qt/forms/rpcconsole.ui \
-    src/qt/forms/optionsdialog.ui
-
-contains(USE_QRCODE, 1) {
-HEADERS += src/qt/qrcodedialog.h
-SOURCES += src/qt/qrcodedialog.cpp
-FORMS += src/qt/forms/qrcodedialog.ui
-}
+QWT_CONFIG += QwtPlot
+DEFINES += QWT_MOC_INCLUDE
+include(src/qt/qwt/qwt.pri)
 
 CODECFORTR = UTF-8
-
-# for lrelease/lupdate
-# also add new translations to src/qt/bitcoin.qrc under translations/
-TRANSLATIONS = $$files(src/qt/locale/bitcoin_*.ts)
 
 isEmpty(QMAKE_LRELEASE) {
     win32:QMAKE_LRELEASE = $$[QT_INSTALL_BINS]\\lrelease.exe
@@ -418,11 +321,8 @@ windows:!contains(MINGW_THREAD_BUGFIX, 0) {
     QMAKE_LIBS_QT_ENTRY = -lmingwthrd $$QMAKE_LIBS_QT_ENTRY
 }
 
-macx:HEADERS += src/qt/macdockiconhandler.h src/qt/macnotificationhandler.h
-macx:OBJECTIVE_SOURCES += src/qt/macdockiconhandler.mm src/qt/macnotificationhandler.mm
 macx:LIBS += -framework Foundation -framework ApplicationServices -framework AppKit
 macx:DEFINES += MAC_OSX MSG_NOSIGNAL=0
-macx:ICON = src/qt/res/icons/wallet.icns
 macx:TARGET = "BitBay-Wallet-Qt"
 #macx:QMAKE_CFLAGS_THREAD += -pthread
 #macx:QMAKE_LFLAGS_THREAD += -pthread
@@ -437,7 +337,7 @@ LIBS += $$join(OPENSSL_LIB_PATH,,-L,) -lssl -lcrypto -ldb$$BDB_LIB_SUFFIX -ldb_c
 windows:LIBS += -lws2_32 -lshlwapi -lmswsock -lole32 -loleaut32 -luuid -lgdi32
 LIBS += -lboost_system$$BOOST_LIB_SUFFIX -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_THREAD_LIB_SUFFIX
 windows:LIBS += -lboost_chrono$$BOOST_LIB_SUFFIX
-message($$LIBS)
+#message($$LIBS)
 
 contains(RELEASE, 1) {
     !windows:!macx {
