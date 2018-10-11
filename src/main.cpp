@@ -841,7 +841,7 @@ int CTxIndex::GetDepthInMainChain() const
     return 1 + nBestHeight - pindex->nHeight;
 }
 
-int CTxIndex::GetHeightInMainChain(uint* vtxidx, uint256 txhash, uint256* blockhash) const
+int CTxIndex::GetHeightInMainChain(unsigned int* vtxidx, uint256 txhash, uint256* blockhash) const
 {
     // Read block header
     CBlock block;
