@@ -1,6 +1,6 @@
 TEMPLATE = app
 TARGET = bitbay-wallet-qt
-VERSION = 1.2.2
+VERSION = 2.1.0
 
 # mac: default path to brew packages
 macx:INCLUDEPATH += /usr/local/opt/boost/include
