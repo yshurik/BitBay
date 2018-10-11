@@ -841,6 +841,30 @@ int CTxIndex::GetDepthInMainChain() const
     return 1 + nBestHeight - pindex->nHeight;
 }
 
+int CTxIndex::GetHeightInMainChain(unsigned int* vtxidx, uint256 txhash, uint256* blockhash) const
+{
+    // Read block header
+    CBlock block;
+    if (!block.ReadFromDisk(pos.nFile, pos.nBlockPos, vtxidx != nullptr))
+        return 0;
+    if (vtxidx) {
+        for(unsigned int i=0; i<block.vtx.size(); i++) {
+            if (block.vtx[i].GetHash() == txhash)
+                *vtxidx = i;
+        }
+    }
+    // Find the block in the index
+    uint256 bhash = block.GetHash();
+    if (blockhash) *blockhash = bhash;
+    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(bhash);
+    if (mi == mapBlockIndex.end())
+        return 0;
+    CBlockIndex* pindex = (*mi).second;
+    if (!pindex || !pindex->IsInMainChain())
+        return 0;
+    return pindex->nHeight;
+}
+
 // Return transaction in tx, and if it was found inside a block, its hash is placed in hashBlock
 bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock)
 {

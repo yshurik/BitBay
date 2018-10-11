@@ -14,11 +14,7 @@ matrix:
       sudo: required
       env: DEPLOY_FILE=bitbayd_win.zip ARCH="mxe"
     - os: osx
-      osx_image: xcode7.2
-      compiler: clang
-      env: DEPLOY_FILE=bitbayd_mac.zip ARCH="macd"
-    - os: osx
-      osx_image: xcode7.2
+      osx_image: xcode7.3
       compiler: clang
       env: DEPLOY_FILE=bitbay-wallet-qt_mac.zip ARCH="mac"
 
@@ -61,7 +57,7 @@ install:
     source /opt/qt59/bin/qt59-env.sh                            &&
     export                                                      ;
   fi &&
-  if [ $ARCH == "mac" ] || [ $ARCH == "macd" ]; then
+  if [[ $ARCH == "mac" ]]; then
     brew install boost || echo -                                ;
     brew install openssl || echo -                              ;
     brew install miniupnpc                                      &&
@@ -131,7 +127,7 @@ before_script:
 - export REPOL=https://github.com/bitbaymarket/bitbay-prebuilt-libs1
 - export BASE1=$REPOL/releases/download/base1
 - >
-  if [ $ARCH == "mac" ] || [ $ARCH == "macd" ]; then
+  if [[ $ARCH == "mac" ]]; then
     export QMAKESPEC=macx-clang;
   fi
 
@@ -155,7 +151,7 @@ script:
         bitbay-qt.pro &&
     make -j2;
   fi &&
-  if [ $ARCH == "mac" ] || [ $ARCH == "macd" ]; then
+  if [[ $ARCH == "mac" ]]; then
     qmake -v &&
     qmake \
         CICD=travis_mac \
@@ -246,7 +242,7 @@ script:
     echo make -j2 -f makefile.unix  &&
     cd ..                           ;
   fi;
-  if [ $ARCH == "mac" ] || [ $ARCH == "macd" ]; then
+  if [[ $ARCH == "mac" ]]; then
     cd src                          &&
     make -j2 -f makefile.osx        &&
     cd ..                           &&
@@ -264,74 +260,7 @@ script:
         @executable_path/../Frameworks/libcrypto.1.0.0.dylib \
         BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib &&
     ls                                                              &&
-    zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app                        &&
-    mkdir -p bitbayd_mac                                            &&
-    cp BitBay-Wallet-Qt.app/Contents/MacOS/bitbayd bitbayd_mac/     &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libdb_cxx-4.8.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libminiupnpc.17.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_thread-mt.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_system-mt.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_filesystem-mt.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libboost_program_options-mt.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib bitbayd_mac/ &&
-    cp BitBay-Wallet-Qt.app/Contents/Frameworks/libcrypto.1.0.0.dylib bitbayd_mac/ &&
-    install_name_tool -id libdb_cxx-4.8.dylib bitbayd_mac/libdb_cxx-4.8.dylib &&
-    install_name_tool -id libminiupnpc.17.dylib bitbayd_mac/libminiupnpc.17.dylib &&
-    install_name_tool -id libboost_thread-mt.dylib bitbayd_mac/libboost_thread-mt.dylib &&
-    install_name_tool -id libboost_system-mt.dylib bitbayd_mac/libboost_system-mt.dylib &&
-    install_name_tool -id libboost_filesystem-mt.dylib bitbayd_mac/libboost_filesystem-mt.dylib &&
-    install_name_tool -id libboost_program_options-mt.dylib bitbayd_mac/libboost_program_options-mt.dylib &&
-    install_name_tool -id libssl.1.0.0.dylib bitbayd_mac/libssl.1.0.0.dylib &&
-    install_name_tool -id libcrypto.1.0.0.dylib bitbayd_mac/libcrypto.1.0.0.dylib &&
-    install_name_tool \
-        -change \
-        @executable_path/../Frameworks/libcrypto.1.0.0.dylib \
-        @loader_path/libcrypto.1.0.0.dylib \
-        bitbayd_mac/libssl.1.0.0.dylib &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libdb_cxx-4.8.dylib \
-        @loader_path/libdb_cxx-4.8.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libminiupnpc.17.dylib \
-        @loader_path/libminiupnpc.17.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libboost_thread-mt.dylib \
-        @loader_path/libboost_thread-mt.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libboost_system-mt.dylib \
-        @loader_path/libboost_system-mt.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libboost_filesystem-mt.dylib \
-        @loader_path/libboost_filesystem-mt.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libboost_program_options-mt.dylib \
-        @loader_path/libboost_program_options-mt.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libssl.1.0.0.dylib \
-        @loader_path/libssl.1.0.0.dylib \
-        bitbayd_mac/bitbayd &&
-    install_name_tool \
-        -change \
-        @loader_path/../Frameworks/libcrypto.1.0.0.dylib \
-        @loader_path/libcrypto.1.0.0.dylib \
-        bitbayd_mac/bitbayd &&
-    if [ $ARCH == "macd" ]; then
-        zip -r $DEPLOY_FILE bitbayd_mac;
-    fi &&
-    echo done;
+    zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app;
   fi &&
   if [[ $ARCH == "mxe" ]]; then
     cd src                              &&
