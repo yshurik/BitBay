@@ -2488,7 +2488,7 @@ FILE* AppendBlockFile(unsigned int& nFileRet)
     }
 }
 
-bool LoadBlockIndex(bool fAllowNew)
+bool LoadBlockIndex(LoadMsg load_msg, bool fAllowNew)
 {
     LOCK(cs_main);
 
@@ -2502,7 +2502,7 @@ bool LoadBlockIndex(bool fAllowNew)
     // Load block index
     //
     CTxDB txdb("cr+");
-    if (!txdb.LoadBlockIndex())
+    if (!txdb.LoadBlockIndex(load_msg))
         return false;
 
     //

@@ -32,6 +32,7 @@ private slots:
     void openBlock(QTreeWidgetItem*,int);
     void openTx(QTreeWidgetItem*,int);
     void openTx(uint256 blockhash, uint txidx);
+    void openTxFromInput();
     void jumpToBlock();
     void openBlockFromInput();
     void updateCurrentBlockIndex();

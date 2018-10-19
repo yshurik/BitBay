@@ -302,7 +302,7 @@ static CBlockIndex *InsertBlockIndex(uint256 hash)
     return pindexNew;
 }
 
-bool CTxDB::LoadBlockIndex()
+bool CTxDB::LoadBlockIndex(LoadMsg load_msg)
 {
     if (mapBlockIndex.size() > 0) {
         // Already loaded once in this session. It can happen during migration
@@ -318,6 +318,7 @@ bool CTxDB::LoadBlockIndex()
     ssStartKey << make_pair(string("blockindex"), uint256(0));
     iterator->Seek(ssStartKey.str());
     // Now read each entry.
+    int indexCount = 0;
     while (iterator->Valid())
     {
         boost::this_thread::interruption_point();
@@ -371,6 +372,10 @@ bool CTxDB::LoadBlockIndex()
             setStakeSeen.insert(make_pair(pindexNew->prevoutStake, pindexNew->nStakeTime));
 
         iterator->Next();
+        indexCount++;
+        if (indexCount % 10000 == 0) {
+            load_msg(std::to_string(indexCount));
+        }
     }
     delete iterator;
 

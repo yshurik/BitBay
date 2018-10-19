@@ -14,6 +14,7 @@
 #include "scrypt.h"
 
 #include <list>
+#include <functional>
 
 class CBlock;
 class CBlockIndex;
@@ -106,6 +107,8 @@ class CTxDB;
 class CTxIndex;
 class CWalletInterface;
 
+/** functors for messagings */
+typedef std::function<void(const std::string &)> LoadMsg;
 /** Register a wallet to receive updates from core */
 void RegisterWallet(CWalletInterface* pwalletIn);
 /** Unregister a wallet from core */
@@ -128,7 +131,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock);
 bool CheckDiskSpace(uint64_t nAdditionalBytes=0);
 FILE* OpenBlockFile(unsigned int nFile, unsigned int nBlockPos, const char* pszMode="rb");
 FILE* AppendBlockFile(unsigned int& nFileRet);
-bool LoadBlockIndex(bool fAllowNew=true);
+bool LoadBlockIndex(LoadMsg load_msg, bool fAllowNew=true);
 void PrintBlockTree();
 CBlockIndex* FindBlockByHeight(int nHeight);
 bool ProcessMessages(CNode* pfrom);
@@ -878,7 +881,7 @@ public:
     int64_t nMoneySupply;
 
     unsigned int nFlags;  // ppcoin: block index flags
-    enum  
+    enum
     {
         BLOCK_PROOF_OF_STAKE = (1 << 0), // is proof-of-stake block
         BLOCK_STAKE_ENTROPY  = (1 << 1), // entropy bit for stake modifier

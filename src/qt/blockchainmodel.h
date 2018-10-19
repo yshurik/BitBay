@@ -22,7 +22,8 @@ public:
 
     enum ColumnIndex {
         Height = 0, /**< Height of the block */
-        Hash        /**< Blok hash */
+        Hash,       /**< Block hash */
+        Date        /**< Block date */
     };
     enum Roles {
         HashRole = Qt::UserRole+1000,

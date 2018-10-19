@@ -197,7 +197,7 @@ public:
     bool WriteHashBestChain(uint256 hashBestChain);
     bool ReadBestInvalidTrust(CBigNum& bnBestInvalidTrust);
     bool WriteBestInvalidTrust(CBigNum bnBestInvalidTrust);
-    bool LoadBlockIndex();
+    bool LoadBlockIndex(LoadMsg load_msg);
 private:
     bool LoadBlockIndexGuts();
 };
