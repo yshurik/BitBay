@@ -12,6 +12,7 @@
 #include "qwt/qwt_plot_curve.h"
 #include "qwt/qwt_plot_barchart.h"
 
+#include <QTime>
 #include <QPainter>
 #include <QClipboard>
 
@@ -87,6 +88,7 @@ BlockchainPage::BlockchainPage(QWidget *parent) :
     ui->blockValues->header()->setFont(font);
     ui->blockchainView->header()->setFont(font);
 
+    ui->txValues->header()->resizeSection(0 /*property*/, 250);
     ui->txInputs->header()->resizeSection(0 /*n*/, 50);
     ui->txOutputs->header()->resizeSection(0 /*n*/, 50);
     ui->txInputs->header()->resizeSection(1 /*tx*/, 140);
@@ -405,11 +407,13 @@ void BlockchainPage::openTx(uint256 blockhash, uint txidx)
     if (tx.IsCoinStake()) txtype = tr("CoinStake");
     ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Type",txtype})));
 
+    QTime timeFetchInputs = QTime::currentTime();
     MapPrevTx mapInputs;
     map<uint256, CTxIndex> mapUnused;
     int64_t nFeesValue = 0;
     bool fInvalid = false;
     tx.FetchInputs(txdb, mapUnused, false, false, mapInputs, fInvalid);
+    int msecsFetchInputs = timeFetchInputs.msecsTo(QTime::currentTime());
 
     ui->txInputs->clear();
     size_t n_vin = tx.vin.size();
@@ -569,4 +573,6 @@ void BlockchainPage::openTx(uint256 blockhash, uint txidx)
         output->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
         ui->txOutputs->addTopLevelItem(output);
     }
+
+    ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Fetch Inputs Time",QString::number(msecsFetchInputs)+" msecs"})));
 }
