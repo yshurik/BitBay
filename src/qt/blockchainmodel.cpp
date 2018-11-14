@@ -1,3 +1,6 @@
+// Copyright (c) 2018 yshurik
+// Distributed under the MIT/X11 software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "blockchainmodel.h"
 #include "guiutil.h"
@@ -10,6 +13,10 @@
 
 struct BlockIndexCacheObj {
     uint256 hash;
+    int nPegSupplyIndex;
+    int nPegVotesInflate;
+    int nPegVotesDeflate;
+    int nPegVotesNochange;
     unsigned int nFlags;
     QString date;
 };
@@ -26,8 +33,6 @@ BlockchainModel::BlockchainModel(QObject *parent) :
     QAbstractItemModel(parent),priv(new BlockchainModelPriv)
 {
     priv->columns << tr("Height") << tr("Hash") << tr("Date");
-    //              << tr("Votes")
-    //              << tr("Peg") << tr("PegWOK") << tr("PegAOK");
     priv->cache.setMaxCost(100000);
 }
 
@@ -69,8 +74,11 @@ bool BlockchainModel::getItem(int h) const
 
     while(pblockindex && pblockindex->nHeight <=h2) {
         uint256 bhash = pblockindex->GetBlockHash();
-        auto obj = new BlockIndexCacheObj{
-                bhash,
+        auto obj = new BlockIndexCacheObj{bhash,
+                0,
+                0,
+                0,
+                0,
                 pblockindex->nFlags,
                 QString::fromStdString(DateTimeStrFormat(pblockindex->GetBlockTime()))
         };
@@ -145,6 +153,21 @@ QVariant BlockchainModel::data(const QModelIndex &index, int role) const
         QVariant v;
         v.setValue(obj->hash);
         return v;
+    }
+    else if (role == HashStringRole)
+    {
+        int h = priv->height-index.row();
+        getItem(h);
+        if (!priv->cache.contains(h)) {
+            return QVariant();
+        }
+        auto obj = priv->cache.object(h);
+        return QString::fromStdString(obj->hash.ToString());
+    }
+    else if (role == HeightRole)
+    {
+        int h = priv->height-index.row();
+        return h;
     }
     return QVariant();
 }
