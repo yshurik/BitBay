@@ -9,12 +9,8 @@ matrix:
       dist: trusty
       sudo: required
       env: DEPLOY_FILE=bitbay-wallet-qt_linux32.tgz ARCH="x86"
-    - os: linux
-      dist: trusty
-      sudo: required
-      env: DEPLOY_FILE=bitbayd_win.zip ARCH="mxe"
     - os: osx
-      osx_image: xcode7.3
+      osx_image: xcode8.3
       compiler: clang
       env: DEPLOY_FILE=bitbay-wallet-qt_mac.zip ARCH="mac"
 
@@ -36,6 +32,7 @@ install:
     sudo apt-get install -y libgl1-mesa-dev:i386                &&
     sudo apt-get install -y libminiupnpc-dev:i386               &&
     sudo apt-get install -y libfuse-dev:i386                    &&
+    sudo apt-get install -y libqrencode-dev:i386                &&
     sudo apt-get install -y qt59base:i386                       &&
     sudo apt-get install -y qt59tools:i386                      &&
     source /opt/qt59/bin/qt59-env.sh                            &&
@@ -52,6 +49,7 @@ install:
     sudo apt-get install -y libboost-thread-dev                 &&
     sudo apt-get install -y libssl-dev                          &&
     sudo apt-get install -y libminiupnpc-dev                    &&
+    sudo apt-get install -y libqrencode-dev                     &&
     sudo apt-get install -y qt59-meta-minimal                   &&
     sudo apt-get install -y qt59tools                           &&
     source /opt/qt59/bin/qt59-env.sh                            &&
@@ -63,6 +61,7 @@ install:
     brew install miniupnpc                                      &&
     brew install qt                                             &&
     brew link --force qt                                        &&
+    brew install qrencode                                       &&
     cd "$TRAVIS_BUILD_DIR"                                      &&
     curl -fsSL -o db-4.8.30.NC.tar.gz \
         $BASE1/db-4.8.30.NC.tar.gz                              &&
@@ -78,49 +77,6 @@ install:
     make install                                                &&
     cd ..                                                       &&
     cd ..                                                       ;
-  fi &&
-  if [[ $ARCH == "mxe" ]]; then
-    sudo sh -c 'echo "deb http://pkg.mxe.cc/repos/apt/debian wheezy main" > /etc/apt/sources.list.d/mxeapt.list' &&
-    sudo apt-key adv \
-        --keyserver keyserver.ubuntu.com \
-        --recv-keys D43A795B73B16ABE9643FE1AFD8FFF16DB45C6AB        &&
-    sudo apt-get update                                             &&
-    export                                                          &&
-    sudo apt-get install -y mxe-i686-w64-mingw32.static-gcc         &&
-    sudo apt-get install -y mxe-i686-w64-mingw32.static-boost       &&
-    sudo apt-get install -y mxe-i686-w64-mingw32.static-miniupnpc   &&
-    sudo apt-get install -y mxe-i686-w64-mingw32.static-openssl     &&
-    sudo apt-get install -y mxe-i686-w64-mingw32.static-zlib        &&
-    cd "$TRAVIS_BUILD_DIR"                                          &&
-    curl -fsSL -o db-4.8.30.NC.tar.gz \
-        $BASE1/db-4.8.30.NC.tar.gz &&
-    curl -fsSL -o db-4.8.30-fix-for-mingw.patch \
-        $REPOL/raw/master/patches/db-4.8.30-fix-for-mingw.patch &&
-    tar -zxf db-4.8.30.NC.tar.gz                                &&
-    mv db-4.8.30.NC db                                          &&
-    cd db                                                       &&
-    cd build_unix                                               &&
-    export MXE_PATH=/usr/lib/mxe                                &&
-    export CC=$MXE_PATH/usr/bin/i686-w64-mingw32.static-gcc     &&
-    export CXX=$MXE_PATH/usr/bin/i686-w64-mingw32.static-g++    &&
-    sh ../dist/configure \
-        --enable-mingw \
-        --enable-cxx \
-        --host x86 \
-        --disable-replication \
-        --prefix=$MXE_PATH/usr/i686-w64-mingw32.static          &&
-    perl -i -pe 's/define socklen_t int/define socklen_t_xx int/m' db_config.h &&
-    perl -i -pe 's/define HAVE_REPLICATION_THREADS 1/define HAVE_REPLICATION_THREADS_XX 1/m' db_config.h &&
-    cd ..                                                       &&
-    patch -p1 < ../db-4.8.30-fix-for-mingw.patch                &&
-    cd build_unix                                               &&
-    make -j2                                                    &&
-    cd ..                                                       &&
-    cd ..                                                       &&
-    mkdir static_db_4_8_win                                     &&
-    mkdir static_db_4_8_win/include                             &&
-    cp db/build_unix/*.h static_db_4_8_win/include/             &&
-    cp db/build_unix/lib*a static_db_4_8_win/                   ;
   fi
 
 before_script:
@@ -133,7 +89,7 @@ before_script:
 
 script:
 - cd "$TRAVIS_BUILD_DIR"
-- |
+- >
   if [[ $ARCH == "x86" ]]; then
     qmake -v &&
     qmake \
@@ -141,6 +97,7 @@ script:
         QMAKE_CFLAGS+=-m32 \
         QMAKE_CXXFLAGS+=-m32 \
         QMAKE_LFLAGS+=-m32 \
+        "USE_QRCODE=1" \
         bitbay-qt.pro &&
     make -j2;
   fi &&
@@ -148,6 +105,7 @@ script:
     qmake -v &&
     qmake \
         CICD=travis_x64 \
+        "USE_QRCODE=1" \
         bitbay-qt.pro &&
     make -j2;
   fi &&
@@ -155,15 +113,9 @@ script:
     qmake -v &&
     qmake \
         CICD=travis_mac \
+        "USE_QRCODE=1" \
         bitbay-qt.pro &&
     make -j2;
-  fi &&
-  if [[ $ARCH == "mxe_skip_now" ]]; then
-    echo $MXE_PATH/usr/bin/i686-w64-mingw32.static-qmake -v &&
-    echo $MXE_PATH/usr/bin/i686-w64-mingw32.static-qmake \
-        CICD=travis_mxe \
-        bitbay-qt.pro &&
-    echo make -j2;
   fi
 
 - ls -l
@@ -261,14 +213,7 @@ script:
         BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib &&
     ls                                                              &&
     zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app;
-  fi &&
-  if [[ $ARCH == "mxe" ]]; then
-    cd src                              &&
-    make -j2 -f makefile.linux-mingw    &&
-    zip -r $DEPLOY_FILE bitbayd.exe     &&
-    cd ..                               &&
-    mv src/$DEPLOY_FILE .               ;
-  fi;
+  fi
 
 - file $DEPLOY_FILE
 

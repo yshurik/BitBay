@@ -6,10 +6,12 @@ VERSION = 2.1.0
 macx:INCLUDEPATH += /usr/local/opt/boost/include
 macx:INCLUDEPATH += /usr/local/opt/openssl/include
 macx:INCLUDEPATH += /usr/local/opt/miniupnpc/include
+macx:INCLUDEPATH += /usr/local/opt/qrencode/include
 
 macx:LIBS += -L/usr/local/opt/boost/lib
 macx:LIBS += -L/usr/local/opt/openssl/lib
 macx:LIBS += -L/usr/local/opt/miniupnpc/lib
+macx:LIBS += -L/usr/local/opt/qrencode/lib
 
 macx:QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
 
