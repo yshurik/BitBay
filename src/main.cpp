@@ -2194,7 +2194,7 @@ bool CBlock::AcceptBlock()
             CBlockIndex *last = pindexPrev;
 
             // while that block is not on the main chain
-            while (!last->pnext && pindexPrev != NULL) {
+            while (last != NULL && !last->pnext) {
                 CBlock bl;
                 bl.ReadFromDisk(last, true);
                 // loop through every spent input from said block
@@ -2212,7 +2212,7 @@ bool CBlock::AcceptBlock()
                 }
 
                 // go to the parent block
-                last = pindexPrev->pprev;
+                last = last->pprev;
             }
         }
     }
