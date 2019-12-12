@@ -9,6 +9,7 @@ src/build.h
 *.rej
 *.orig
 *.o
+*.a
 *.app
 .bitbay
 #compilation and Qt preprocessor part
@@ -22,11 +23,21 @@ qrc_*.cpp
 #mac specific
 .DS_Store
 build
+debug
+release
 nodes
 db
 
 !src/leveldb/Makefile
 .qmake.stash
 bitbay-qt-local.pri
+pegops_tests-local.pri
 bitbay-wallet-qt
+Makefile*
+*qt_plugin_import.cpp
+
+.deps
+.dirstamp
+config.log
+config.status
 

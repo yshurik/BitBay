@@ -51,19 +51,19 @@ build_script:
   - ls
   - set PATH=%PATH_ORIG%
   - 7z a bitbay-wallet-qt_win.zip bitbay-wallet-qt.exe
-  - set PATH=%cd%\MinGW32\bin;C:\MinGW\msys\1.0\bin;%PATH%
-  - cd src
-  - set BOOST_INCLUDE_PATH=/c/Libraries/boost_1_63_0
-  - set BOOST_LIB_PATH=../static_boost_1_63_win
-  - set BOOST_LIB_SUFFIX=-mt
-  - set OPENSSL_INCLUDE_PATH=../openssl/include
-  - set OPENSSL_LIB_PATH=../openssl
-  - set BDB_INCLUDE_PATH=../db/include
-  - set BDB_LIB_PATH=../db/
-  - set MINIUPNPC_LIB_PATH=../miniupnpc
-  - make -f makefile.mingw -j2
-  - cd ..
-  - move src\bitbayd.exe .
+  - set PATH=%cd%\MinGW32\bin;C:\MinGW\msys\1.0\bin;%QTDIR%\bin
+  - qmake
+    CICD=appveyor
+    BOOST_INCLUDE_PATH=%BOOST_PATH%
+    BOOST_LIB_PATH=%cd%\static_boost_1_63_win
+    BDB_INCLUDE_PATH=%cd%\db\include
+    BDB_LIB_PATH=%cd%\db
+    OPENSSL_INCLUDE_PATH=%cd%\openssl\include
+    OPENSSL_LIB_PATH=%cd%\openssl
+    MINIUPNPC_LIB_PATH=%cd%\miniupnpc
+    bitbayd.pro
+  - make -j2
+  - move release\bitbayd.exe .
   - set PATH=%PATH_ORIG%
   - 7z a bitbayd_win.zip bitbayd.exe
 

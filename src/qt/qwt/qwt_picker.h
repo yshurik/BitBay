@@ -14,6 +14,8 @@
 #include "qwt_event_pattern.h"
 
 #include <qobject.h>
+#include <qfont.h>
+#include <qpen.h>
 
 class QwtPickerMachine;
 class QwtWidgetOverlay;

@@ -23,7 +23,8 @@ public:
         center( 50.0, 50.0 ),
         radius( 50.0 ),
         startAngle( -135.0 ),
-        endAngle( 135.0 )
+        endAngle( 135.0 ),
+        splitValue( 0.0 )
     {
     }
 
@@ -32,6 +33,8 @@ public:
 
     double startAngle;
     double endAngle;
+    
+    double splitValue;
 };
 
 /*!
@@ -53,6 +56,12 @@ QwtRoundScaleDraw::QwtRoundScaleDraw()
 QwtRoundScaleDraw::~QwtRoundScaleDraw()
 {
     delete d_data;
+}
+
+// todo may just subclass?
+void QwtRoundScaleDraw::setSplitValue( double value )
+{
+    d_data->splitValue = value;
 }
 
 /*!
@@ -175,6 +184,9 @@ void QwtRoundScaleDraw::drawLabel( QPainter *painter, double value ) const
 
     const QRectF r( x - sz.width() / 2, y - sz.height() / 2,
         sz.width(), sz.height() );
+    if (value <= d_data->splitValue)
+        const_cast<QwtText&>(label).setColor("#2da5e0");
+    else const_cast<QwtText&>(label).setColor("#c06a15");
     label.draw( painter, r );
 }
 
@@ -211,6 +223,12 @@ void QwtRoundScaleDraw::drawTick( QPainter *painter, double value, double len ) 
         const double y1 = cy - radius * cosArc;
         const double y2 = cy - ( radius + len ) * cosArc;
 
+        auto pen = painter->pen();
+        if (value <= d_data->splitValue)
+            pen.setColor("#2da5e0");
+        else pen.setColor("#c06a15");
+        painter->setPen(pen);
+        
         QwtPainter::drawLine( painter, x1, y1, x2, y2 );
     }
 }

@@ -1,7 +1,7 @@
-packages:=boost openssl libevent
-darwin_packages:=zeromq
-linux_packages:=zeromq
-native_packages := native_ccache
+packages:=boost openssl libevent zlib
+darwin_packages:=
+linux_packages:=
+native_packages:=native_ccache
 
 qt_native_packages = native_protobuf
 qt_packages = qrencode protobuf zlib

@@ -100,6 +100,21 @@ AC_PATH_TOOL(CPPFILT, c++filt)
 
 AC_ARG_VAR(PYTHONPATH, Augments the default search path for python module files)
 
+AC_ARG_WITH([zlib],
+  [AS_HELP_STRING([--with-zlib],
+    [include classes for streaming compressed data in and out @<:@default=check@:>@])],
+  [],[with_zlib=check])
+
+AC_ARG_WITH([zlib-include],
+  [AS_HELP_STRING([--with-zlib-include=PATH],
+    [zlib include directory])],
+  [CPPFLAGS="-I$withval $CPPFLAGS"])
+
+AC_ARG_WITH([zlib-lib],
+  [AS_HELP_STRING([--with-zlib-lib=PATH],
+    [zlib lib directory])],
+[LDFLAGS="-L$withval $LDFLAGS"])
+
 AC_ARG_WITH([miniupnpc],
   [AS_HELP_STRING([--with-miniupnpc],
   [enable UPNP (default is yes if libminiupnpc is found)])],

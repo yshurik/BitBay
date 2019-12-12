@@ -4,58 +4,144 @@ matrix:
     - os: linux
       dist: trusty
       sudo: required
-      env: DEPLOY_FILE=bitbay-wallet-qt_linux64.tgz ARCH="x64"
+      env:
+        - DEPLOY_FILE=mainnet-node.dockerimage
+        - ARCH="mainnet-node"
     - os: linux
       dist: trusty
       sudo: required
-      env: DEPLOY_FILE=bitbay-wallet-qt_linux32.tgz ARCH="x86"
+      env:
+        - DEPLOY_FILE=mainnet-seed-node.dockerimage
+        - ARCH="mainnet-seed-node"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-node.dockerimage
+        - ARCH="testnet-node"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-seed-node.dockerimage
+        - ARCH="testnet-seed-node"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-bitbay-wallet-qt_linux64.tgz
+        - ARCH="testnet-qtwallet-lin64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-bitbay-wallet-qt_win32.zip
+        - ARCH="testnet-qtwallet-win32"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-bitbay-wallet-qt_win64.zip
+        - ARCH="testnet-qtwallet-win64"
     - os: osx
-      osx_image: xcode8.3
+      osx_image: xcode9.4
       compiler: clang
-      env: DEPLOY_FILE=bitbay-wallet-qt_mac.zip ARCH="mac"
+      env:
+        - DEPLOY_FILE=testnet-bitbay-wallet-qt_mac.zip
+        - ARCH="testnet-qtwallet-mac64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-bitbayd_linux64.tgz
+        - ARCH="testnet-bitbayd-lin64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbay-wallet-qt_linux64.tgz
+        - ARCH="qtwallet-lin64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbayd_linux64.tgz
+        - ARCH="bitbayd-lin64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbay-wallet-qt_win32.zip
+        - ARCH="qtwallet-win32"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbay-wallet-qt_win64.zip
+        - ARCH="qtwallet-win64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbayd_win32.zip
+        - ARCH="bitbayd-win32"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbayd_win64.zip
+        - ARCH="bitbayd-win64"
+    - os: osx
+      osx_image: xcode9.4
+      compiler: clang
+      env:
+        - DEPLOY_FILE=bitbay-wallet-qt_mac.zip
+        - ARCH="qtwallet-mac64"
+    - os: osx
+      osx_image: xcode9.4
+      compiler: clang
+      env:
+        - DEPLOY_FILE=bitbayd_mac.zip
+        - ARCH="bitbayd-mac64"
+services:
+  - docker
 
 install:
 - export REPOL=https://github.com/bitbaymarket/bitbay-prebuilt-libs1
 - export BASE1=$REPOL/releases/download/base1
 - >
-  if [[ $ARCH == "x86" ]]; then
-    sudo add-apt-repository -y ppa:beineri/opt-qt593-trusty     &&
-    sudo add-apt-repository -y ppa:bitcoin/bitcoin              &&
-    sudo apt-get update                                         &&
-    sudo apt-get install --no-install-recommends -y gcc-multilib g++-multilib &&
-    sudo apt-get install -y libdb4.8-dev:i386                   &&
-    sudo apt-get install -y libdb4.8++-dev:i386                 &&
-    sudo apt-get install -y libboost-filesystem-dev:i386        &&
-    sudo apt-get install -y libboost-program-options-dev:i386   &&
-    sudo apt-get install -y libboost-thread-dev:i386            &&
-    sudo apt-get install -y libssl-dev:i386                     &&
-    sudo apt-get install -y libgl1-mesa-dev:i386                &&
-    sudo apt-get install -y libminiupnpc-dev:i386               &&
-    sudo apt-get install -y libfuse-dev:i386                    &&
-    sudo apt-get install -y libqrencode-dev:i386                &&
-    sudo apt-get install -y qt59base:i386                       &&
-    sudo apt-get install -y qt59tools:i386                      &&
-    source /opt/qt59/bin/qt59-env.sh                            &&
+  if [[ $ARCH == "mainnet-node" ]]; then
     export                                                      ;
-  fi &&
-  if [[ $ARCH == "x64" ]]; then
-    sudo add-apt-repository -y ppa:beineri/opt-qt593-trusty     &&
-    sudo add-apt-repository -y ppa:bitcoin/bitcoin              &&
-    sudo apt-get update                                         &&
-    sudo apt-get install -y libdb4.8-dev                        &&
-    sudo apt-get install -y libdb4.8++-dev                      &&
-    sudo apt-get install -y libboost-filesystem-dev             &&
-    sudo apt-get install -y libboost-program-options-dev        &&
-    sudo apt-get install -y libboost-thread-dev                 &&
-    sudo apt-get install -y libssl-dev                          &&
-    sudo apt-get install -y libminiupnpc-dev                    &&
-    sudo apt-get install -y libqrencode-dev                     &&
-    sudo apt-get install -y qt59-meta-minimal                   &&
-    sudo apt-get install -y qt59tools                           &&
-    source /opt/qt59/bin/qt59-env.sh                            &&
+  fi
+- >
+  if [[ $ARCH == "mainnet-seed-node" ]]; then
     export                                                      ;
-  fi &&
-  if [[ $ARCH == "mac" ]]; then
+  fi
+- >
+  if [[ $ARCH == "testnet-node" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "testnet-seed-node" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-lin64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win32" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-mac64" ]]; then
+    brew update || echo -                                       ;
+    brew config || echo -                                       ;
+    brew doctor || echo -                                       ;
     brew install boost || echo -                                ;
     brew install openssl || echo -                              ;
     brew install miniupnpc                                      &&
@@ -68,7 +154,89 @@ install:
     tar -zxf db-4.8.30.NC.tar.gz                                &&
     mv db-4.8.30.NC db                                          &&
     cd db                                                       &&
-    patch dbinc/atomic.h < ../doc/mac_db-4.8_atomic.patch       &&
+    patch -p2 < ../doc/mac_db-4.8_atomic.patch                  &&
+    cd build_unix                                               &&
+    CFLAGS="-mmacosx-version-min=10.9" \
+        CXXFLAGS="-mmacosx-version-min=10.9" \
+        sh ../dist/configure --enable-cxx --prefix=`pwd`/inst   &&
+    make -j2                                                    &&
+    make install                                                &&
+    cd ..                                                       &&
+    cd ..                                                       ;
+  fi
+- >
+  if [[ $ARCH == "testnet-bitbayd-lin64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-lin64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win32" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win32" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-mac64" ]]; then
+    brew update || echo -                                       ;
+    brew config || echo -                                       ;
+    brew doctor || echo -                                       ;
+    brew install boost || echo -                                ;
+    brew install openssl || echo -                              ;
+    brew install miniupnpc                                      &&
+    brew install qt                                             &&
+    brew link --force qt                                        &&
+    brew install qrencode                                       &&
+    cd "$TRAVIS_BUILD_DIR"                                      &&
+    curl -fsSL -o db-4.8.30.NC.tar.gz \
+        $BASE1/db-4.8.30.NC.tar.gz                              &&
+    tar -zxf db-4.8.30.NC.tar.gz                                &&
+    mv db-4.8.30.NC db                                          &&
+    cd db                                                       &&
+    patch -p2 < ../doc/mac_db-4.8_atomic.patch                  &&
+    cd build_unix                                               &&
+    CFLAGS="-mmacosx-version-min=10.9" \
+        CXXFLAGS="-mmacosx-version-min=10.9" \
+        sh ../dist/configure --enable-cxx --prefix=`pwd`/inst   &&
+    make -j2                                                    &&
+    make install                                                &&
+    cd ..                                                       &&
+    cd ..                                                       ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-mac64" ]]; then
+    brew update || echo -                                       ;
+    brew config || echo -                                       ;
+    brew doctor || echo -                                       ;
+    brew install boost || echo -                                ;
+    brew install openssl || echo -                              ;
+    brew install miniupnpc                                      &&
+    brew install qt                                             &&
+    brew link --force qt                                        &&
+    brew install qrencode                                       &&
+    cd "$TRAVIS_BUILD_DIR"                                      &&
+    curl -fsSL -o db-4.8.30.NC.tar.gz \
+        $BASE1/db-4.8.30.NC.tar.gz                              &&
+    tar -zxf db-4.8.30.NC.tar.gz                                &&
+    mv db-4.8.30.NC db                                          &&
+    cd db                                                       &&
+    patch -p2 < ../doc/mac_db-4.8_atomic.patch                  &&
     cd build_unix                                               &&
     CFLAGS="-mmacosx-version-min=10.9" \
         CXXFLAGS="-mmacosx-version-min=10.9" \
@@ -83,33 +251,407 @@ before_script:
 - export REPOL=https://github.com/bitbaymarket/bitbay-prebuilt-libs1
 - export BASE1=$REPOL/releases/download/base1
 - >
-  if [[ $ARCH == "mac" ]]; then
+  if [[ $ARCH == "mainnet-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "mainnet-seed-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "testnet-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "testnet-seed-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-lin64" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win32" ]]; then
+    docker pull bitbayofficial/builder-windows32:qt;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win64" ]]; then
+    docker pull bitbayofficial/builder-windows64:qt;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-mac64" ]]; then
+    export QMAKESPEC=macx-clang;
+  fi
+- >
+  if [[ $ARCH == "testnet-bitbayd-lin64" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-lin64" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin64" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win32" ]]; then
+    docker pull bitbayofficial/builder-windows32:qt;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win64" ]]; then
+    docker pull bitbayofficial/builder-windows64:qt;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win32" ]]; then
+    docker pull bitbayofficial/builder-windows32:qt;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win64" ]]; then
+    docker pull bitbayofficial/builder-windows64:qt;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-mac64" ]]; then
+    export QMAKESPEC=macx-clang;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-mac64" ]]; then
     export QMAKESPEC=macx-clang;
   fi
 
 script:
 - cd "$TRAVIS_BUILD_DIR"
 - >
-  if [[ $ARCH == "x86" ]]; then
+  if [[ $ARCH == "mainnet-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f mainnet-node.dockerfile -t bitbayofficial/mainnet-node:latest &&
+    docker save bitbayofficial/mainnet-node:latest -o ../../mainnet-node.dockerimage &&
+    cd ../..;
+  fi
+- >
+  if [[ $ARCH == "mainnet-seed-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_WALLET=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f mainnet-seed-node.dockerfile -t bitbayofficial/mainnet-seed-node:latest &&
+    docker save bitbayofficial/mainnet-seed-node:latest -o ../../mainnet-seed-node.dockerimage &&
+    cd ../..;
+  fi
+- >
+  if [[ $ARCH == "testnet-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_TESTNET=1\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f testnet-node.dockerfile -t bitbayofficial/testnet-node:latest &&
+    docker save bitbayofficial/testnet-node:latest -o ../../testnet-node.dockerimage &&
+    cd ../..;
+  fi
+- >
+  if [[ $ARCH == "testnet-seed-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_WALLET=0\" \
+            \"USE_TESTNET=1\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f testnet-seed-node.dockerfile -t bitbayofficial/testnet-seed-node:latest &&
+    docker save bitbayofficial/testnet-seed-node:latest -o ../../testnet-seed-node.dockerimage &&
+    cd ../..;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-lin64" ]]; then
+    echo "LIBS += -static" > bitbay-qt-local.pri &&
+    echo "CONFIG += silent" >> bitbay-qt-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_TESTNET=1\" \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbay-qt.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win32" ]]; then
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-windows32:qt \
+        /bin/bash -c "cd /mnt && qmake -v && \
+          qmake \
+            CICD=travis_x32 \
+            QMAKE_LRELEASE=lrelease \
+            \"USE_TESTNET=1\" \
+            \"USE_QRCODE=1\" \
+            bitbay-qt.pro && \
+            mv Makefile.Release Makefile.tmp && ( \
+              cat Makefile.tmp | \
+              sed -e 's/bin.lrelease\.exe/bin\/lrelease/m' | \
+              sed -e 's/boost_thread-mt/boost_thread_win32-mt/m' > Makefile.Release \
+            ) && \
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win64" ]]; then
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-windows64:qt \
+        /bin/bash -c "cd /mnt && qmake -v && \
+          qmake \
+            CICD=travis_x64 \
+            QMAKE_LRELEASE=lrelease \
+            \"USE_TESTNET=1\" \
+            \"USE_QRCODE=1\" \
+            bitbay-qt.pro && \
+            mv Makefile.Release Makefile.tmp && ( \
+              cat Makefile.tmp | \
+              sed -e 's/bin.lrelease\.exe/bin\/lrelease/m' | \
+              sed -e 's/boost_thread-mt/boost_thread_win32-mt/m' > Makefile.Release \
+            ) && \
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-mac64" ]]; then
     qmake -v &&
     qmake \
-        CICD=travis_x86 \
-        QMAKE_CFLAGS+=-m32 \
-        QMAKE_CXXFLAGS+=-m32 \
-        QMAKE_LFLAGS+=-m32 \
+        CICD=travis_mac \
+        "USE_TESTNET=1" \
         "USE_QRCODE=1" \
         bitbay-qt.pro &&
     make -j2;
-  fi &&
-  if [[ $ARCH == "x64" ]]; then
-    qmake -v &&
-    qmake \
-        CICD=travis_x64 \
-        "USE_QRCODE=1" \
-        bitbay-qt.pro &&
-    make -j2;
-  fi &&
-  if [[ $ARCH == "mac" ]]; then
+  fi
+- >
+  if [[ $ARCH == "testnet-bitbayd-lin64" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_TESTNET=1\" \
+            \"USE_EXCHANGE=1\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "qtwallet-lin64" ]]; then
+    echo "LIBS += -static" > bitbay-qt-local.pri &&
+    echo "CONFIG += silent" >> bitbay-qt-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbay-qt.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin64" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win32" ]]; then
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-windows32:qt \
+        /bin/bash -c "cd /mnt && qmake -v && \
+          qmake \
+            CICD=travis_x32 \
+            QMAKE_LRELEASE=lrelease \
+            \"USE_QRCODE=1\" \
+            bitbay-qt.pro && \
+            mv Makefile.Release Makefile.tmp && ( \
+              cat Makefile.tmp | \
+              sed -e 's/bin.lrelease\.exe/bin\/lrelease/m' | \
+              sed -e 's/boost_thread-mt/boost_thread_win32-mt/m' > Makefile.Release \
+            ) && \
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win64" ]]; then
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-windows64:qt \
+        /bin/bash -c "cd /mnt && qmake -v && \
+          qmake \
+            CICD=travis_x64 \
+            QMAKE_LRELEASE=lrelease \
+            \"USE_QRCODE=1\" \
+            bitbay-qt.pro && \
+            mv Makefile.Release Makefile.tmp && ( \
+              cat Makefile.tmp | \
+              sed -e 's/bin.lrelease\.exe/bin\/lrelease/m' | \
+              sed -e 's/boost_thread-mt/boost_thread_win32-mt/m' > Makefile.Release \
+            ) && \
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win32" ]]; then
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-windows32:qt \
+        /bin/bash -c "cd /mnt && qmake -v && \
+          qmake \
+            CICD=travis_x32 \
+            QMAKE_LRELEASE=lrelease \
+            \"USE_QRCODE=1\" \
+            bitbayd.pro && \
+            mv Makefile.Release Makefile.tmp && ( \
+              cat Makefile.tmp | \
+              sed -e 's/bin.lrelease\.exe/bin\/lrelease/m' | \
+              sed -e 's/boost_thread-mt/boost_thread_win32-mt/m' > Makefile.Release \
+            ) && \
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win64" ]]; then
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-windows64:qt \
+        /bin/bash -c "cd /mnt && qmake -v && \
+          qmake \
+            CICD=travis_x64 \
+            QMAKE_LRELEASE=lrelease \
+            \"USE_QRCODE=1\" \
+            bitbayd.pro && \
+            mv Makefile.Release Makefile.tmp && ( \
+              cat Makefile.tmp | \
+              sed -e 's/bin.lrelease\.exe/bin\/lrelease/m' | \
+              sed -e 's/boost_thread-mt/boost_thread_win32-mt/m' > Makefile.Release \
+            ) && \
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "qtwallet-mac64" ]]; then
     qmake -v &&
     qmake \
         CICD=travis_mac \
@@ -117,95 +659,43 @@ script:
         bitbay-qt.pro &&
     make -j2;
   fi
-
+- >
+  if [[ $ARCH == "bitbayd-mac64" ]]; then
+    qmake -v &&
+    qmake \
+        CICD=travis_mac \
+        "USE_QRCODE=0" \
+        bitbayd.pro &&
+    make -j2;
+  fi
 - ls -l
 - >
-  if [[ $ARCH == "x86" ]]; then
+  if [[ $ARCH == "testnet-qtwallet-lin64" ]]; then
     ldd bitbay-wallet-qt                        &&
     file bitbay-wallet-qt                       &&
-    cp -r contrib/appimage appdir               &&
-    cp src/qt/res/icons/BitBay-Wallet-Icon-128.png \
-        appdir/usr/share/icons/hicolor/128x128/bitbay-wallet-qt.png &&
-    cp src/qt/res/icons/BitBay-Wallet-Icon-256.png \
-        appdir/usr/share/icons/hicolor/256x256/bitbay-wallet-qt.png &&
-    cp bitbay-wallet-qt appdir/usr/bin/         &&
-    curl -fsSL -o appimagetool \
-        $BASE1/appimagetool-i686.AppImage       &&
-    chmod 755 appimagetool                      &&
-    ./appimagetool --help                       &&
-    export PATH=`pwd`:$PATH                     &&
-    curl -fsSL -o linuxdeployqt-continuous.tar.gz \
-        $BASE1/linuxdeployqt-continuous.tar.gz  &&
-    tar -zxf linuxdeployqt-continuous.tar.gz    &&
-    cd linuxdeployqt-continuous                 &&
-    qmake \
-        QMAKE_CFLAGS+=-m32 \
-        QMAKE_CXXFLAGS+=-m32 \
-        QMAKE_LFLAGS+=-m32                      &&
-    make -j2                                    &&
-    ls                                          &&
-    cd ..                                       &&
-    curl -fsSL -o patchelf.tar.gz \
-        $BASE1/patchelf-0.9.tar.gz &&
-    tar -zxf patchelf.tar.gz                    &&
-    cd patchelf-0.9                             &&
-    ./bootstrap.sh                              &&
-    ./configure                                 &&
-    make -j2                                    &&
-    sudo make install                           &&
-    cd ..                                       &&
-    ./linuxdeployqt-continuous/bin/linuxdeployqt \
-        appdir/usr/share/bitbay-wallet-qt.desktop \
-        -appimage                               &&
-    mv bitbay-wallet-qt-i386.AppImage \
-        bitbay-wallet-qt                        &&
-    tar -zcf $DEPLOY_FILE bitbay-wallet-qt      ;
-  fi &&
-  if [[ $ARCH == "x64" ]]; then
-    ldd bitbay-wallet-qt                        &&
-    file bitbay-wallet-qt                       &&
-    cp -r contrib/appimage appdir               &&
-    cp src/qt/res/icons/BitBay-Wallet-Icon-128.png \
-        appdir/usr/share/icons/hicolor/128x128/bitbay-wallet-qt.png &&
-    cp src/qt/res/icons/BitBay-Wallet-Icon-256.png \
-        appdir/usr/share/icons/hicolor/256x256/bitbay-wallet-qt.png &&
-    cp bitbay-wallet-qt appdir/usr/bin/         &&
-    ls                                          &&
-    curl -fsSL -o linuxdeployqt \
-        $BASE1/linuxdeployqt-continuous-x86_64.AppImage &&
-    chmod 755 linuxdeployqt                     &&
-    ./linuxdeployqt \
-        appdir/usr/share/bitbay-wallet-qt.desktop \
-        -appimage                               &&
     ls -l                                       &&
-    mv bitbay-wallet-qt-x86_64.AppImage \
-        bitbay-wallet-qt                        &&
     tar -zcf $DEPLOY_FILE bitbay-wallet-qt      ;
   fi
-
 - >
-  if [[ $ARCH == "x86" ]]; then
-    cd src                          &&
-    echo make -j2 -f makefile.unix  &&
-    cd ..                           ;
-  fi &&
-  if [[ $ARCH == "x64" ]]; then
-    cd src                          &&
-    echo make -j2 -f makefile.unix  &&
-    cd ..                           ;
-  fi;
-  if [[ $ARCH == "mac" ]]; then
-    cd src                          &&
-    make -j2 -f makefile.osx        &&
-    cd ..                           &&
-    cp src/bitbayd \
-        BitBay-Wallet-Qt.app/Contents/MacOS/    &&
+  if [[ $ARCH == "testnet-qtwallet-win32" ]]; then
+    mv release/bitbay-wallet-qt.exe .           &&
+    file bitbay-wallet-qt.exe                   &&
+    ls -l                                       &&
+    zip $DEPLOY_FILE bitbay-wallet-qt.exe       ;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-win64" ]]; then
+    mv release/bitbay-wallet-qt.exe .           &&
+    file bitbay-wallet-qt.exe                   &&
+    ls -l                                       &&
+    zip $DEPLOY_FILE bitbay-wallet-qt.exe       ;
+  fi
+- >
+  if [[ $ARCH == "testnet-qtwallet-mac64" ]]; then
     macdeployqt \
         BitBay-Wallet-Qt.app \
-        -verbose=2 \
-        -executable=BitBay-Wallet-Qt.app/Contents/MacOS/bitbayd     &&
+        -verbose=2                                                  &&
     otool -L BitBay-Wallet-Qt.app/Contents/MacOS/BitBay-Wallet-Qt   &&
-    otool -L BitBay-Wallet-Qt.app/Contents/MacOS/bitbayd            &&
     install_name_tool \
         -change \
         /usr/local/Cellar/openssl/1.0.2l/lib/libcrypto.1.0.0.dylib \
@@ -213,6 +703,75 @@ script:
         BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib &&
     ls                                                              &&
     zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app;
+  fi
+- >
+  if [[ $ARCH == "testnet-bitbayd-lin64" ]]; then
+    ldd bitbayd                        &&
+    file bitbayd                       &&
+    ls -l                              &&
+    tar -zcf $DEPLOY_FILE bitbayd      ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-lin64" ]]; then
+    ldd bitbay-wallet-qt                        &&
+    file bitbay-wallet-qt                       &&
+    ls -l                                       &&
+    tar -zcf $DEPLOY_FILE bitbay-wallet-qt      ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin64" ]]; then
+    ldd bitbayd                        &&
+    file bitbayd                       &&
+    ls -l                              &&
+    tar -zcf $DEPLOY_FILE bitbayd      ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win32" ]]; then
+    mv release/bitbay-wallet-qt.exe .           &&
+    file bitbay-wallet-qt.exe                   &&
+    ls -l                                       &&
+    zip $DEPLOY_FILE bitbay-wallet-qt.exe       ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-win64" ]]; then
+    mv release/bitbay-wallet-qt.exe .           &&
+    file bitbay-wallet-qt.exe                   &&
+    ls -l                                       &&
+    zip $DEPLOY_FILE bitbay-wallet-qt.exe       ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win32" ]]; then
+    mv release/bitbayd.exe .           &&
+    file bitbayd.exe                   &&
+    ls -l                              &&
+    zip $DEPLOY_FILE bitbayd.exe       ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-win64" ]]; then
+    mv release/bitbayd.exe .           &&
+    file bitbayd.exe                   &&
+    ls -l                              &&
+    zip $DEPLOY_FILE bitbayd.exe       ;
+  fi
+- >
+  if [[ $ARCH == "qtwallet-mac64" ]]; then
+    macdeployqt \
+        BitBay-Wallet-Qt.app \
+        -verbose=2                                                  &&
+    otool -L BitBay-Wallet-Qt.app/Contents/MacOS/BitBay-Wallet-Qt   &&
+    install_name_tool \
+        -change \
+        /usr/local/Cellar/openssl/1.0.2l/lib/libcrypto.1.0.0.dylib \
+        @executable_path/../Frameworks/libcrypto.1.0.0.dylib \
+        BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib &&
+    ls                                                              &&
+    zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-mac64" ]]; then
+    otool -L bitbayd                                                &&
+    ls                                                              &&
+    zip -r $DEPLOY_FILE bitbayd;
   fi
 
 - file $DEPLOY_FILE
@@ -244,3 +803,4 @@ deploy:
     on:
       tags: true
       repo: dzimbeck/BitBay
+

@@ -42,6 +42,8 @@ public:
     QPointF center() const;
 
     void setAngleRange( double angle1, double angle2 );
+    
+    void setSplitValue( double value );
 
     virtual double extent( const QFont & ) const QWT_OVERRIDE;
 

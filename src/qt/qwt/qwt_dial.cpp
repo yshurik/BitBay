@@ -84,7 +84,8 @@ public:
         maxScaleArc( 0.0 ),
         needle( NULL ),
         arcOffset( 0.0 ),
-        mouseOffset( 0.0 )
+        mouseOffset( 0.0 ),
+        valueCache( 0.0 )
     {
     }
 
@@ -107,6 +108,7 @@ public:
     double mouseOffset;
 
     QPixmap pixmapCache;
+    double valueCache;
 };
 
 /*!
@@ -327,8 +329,9 @@ void QwtDial::paintEvent( QPaintEvent *event )
     }
 
     const QRect r = contentsRect();
-    if ( r.size() != d_data->pixmapCache.size() )
+    if ( r.size() != d_data->pixmapCache.size() || d_data->valueCache != value() )
     {
+        d_data->valueCache = value();
         d_data->pixmapCache = QwtPainter::backingStore( this, r.size() );
         d_data->pixmapCache.fill( Qt::transparent );
 
@@ -460,7 +463,7 @@ void QwtDial::drawNeedle( QPainter *painter ) const
 
     painter->save();
     painter->setRenderHint( QPainter::Antialiasing, true );
-    drawNeedle( painter, sr.center(), 0.5 * sr.width(),
+    drawNeedle( painter, sr.center(), 0.5 * sr.width()+10,
         scaleMap().transform( value() ) + 270.0, colorGroup );
     painter->restore();
 }
@@ -481,6 +484,7 @@ void QwtDial::drawScale( QPainter *painter,
 
     sd->setRadius( radius );
     sd->moveCenter( center );
+    sd->setSplitValue( value() );
 
     QPalette pal = palette();
 

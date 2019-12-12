@@ -6,6 +6,14 @@ EXTRA_LIBRARIES =
 BITCOIN_CONFIG_INCLUDES=-I$(builddir)/config
 BITCOIN_INCLUDES=-I$(builddir) -I$(builddir)/build $(BDB_CPPFLAGS) $(BOOST_CPPFLAGS) $(LEVELDB_CPPFLAGS) $(CRYPTO_CFLAGS) $(SSL_CFLAGS)
 
+BITCOIN_INCLUDES += -I$(srcdir)
+BITCOIN_INCLUDES += -I$(srcdir)/peg
+BITCOIN_INCLUDES += -I$(srcdir)/rpc
+BITCOIN_INCLUDES += -I$(srcdir)/wallet
+BITCOIN_INCLUDES += -I$(srcdir)/leveldb/helpers
+
+DEFS += -DENABLE_WALLET
+DEFS += -DENABLE_EXCHANGE
 
 LIBBITCOIN_SERVER=libbitcoin_server.a
 
@@ -39,13 +47,13 @@ BITCOIN_CORE_H = \
   main.h \
   net.h \
   protocol.h \
-  rpcclient.h \
-  rpcprotocol.h \
-  rpcserver.h \
-  rpcmisc.h \
-  rpcnet.h \
-  rpcblockchain.h \
-  rpcrawtransaction.h \
+  rpc/rpcclient.h \
+  rpc/rpcprotocol.h \
+  rpc/rpcserver.h \
+  rpc/rpcmisc.h \
+  rpc/rpcnet.h \
+  rpc/rpcblockchain.h \
+  rpc/rpcrawtransaction.h \
   timedata.h \
   script.h \
   sync.h \
@@ -55,16 +63,22 @@ BITCOIN_CORE_H = \
   hash.h \
   noui.h \
   kernel.h \
-  pbkdf2.h \
-  scrypt.h \
+  crypto/pbkdf2.h \
+  crypto/scrypt.h \
   chainparams.h \
-  db.h \
-  miner.h \
-  rpcdump.h \
-  rpcmining.h \
-  rpcwallet.h \
-  wallet.h \
-  walletdb.h
+  wallet/db.h \
+  wallet/miner.h \
+  wallet/rpcdump.h \
+  wallet/rpcmining.h \
+  wallet/rpcwallet.h \
+  wallet/wallet.h \
+  wallet/walletdb.h \
+  peg/peg.h \
+  peg/pegdata.h \
+  peg/pegdb-leveldb.h \
+  peg/pegops.h \
+  peg/pegopsp.h \
+  peg/pegutil.h
 
 build/build.h: FORCE
 	@$(MKDIR_P) $(builddir)/build
@@ -90,13 +104,13 @@ libbitcoin_server_a_SOURCES = \
   main.cpp \
   net.cpp \
   protocol.cpp \
-  rpcclient.cpp \
-  rpcprotocol.cpp \
-  rpcserver.cpp \
-  rpcmisc.cpp \
-  rpcnet.cpp \
-  rpcblockchain.cpp \
-  rpcrawtransaction.cpp \
+  rpc/rpcclient.cpp \
+  rpc/rpcprotocol.cpp \
+  rpc/rpcserver.cpp \
+  rpc/rpcmisc.cpp \
+  rpc/rpcnet.cpp \
+  rpc/rpcblockchain.cpp \
+  rpc/rpcrawtransaction.cpp \
   timedata.cpp \
   script.cpp \
   sync.cpp \
@@ -106,16 +120,16 @@ libbitcoin_server_a_SOURCES = \
   hash.cpp \
   noui.cpp \
   kernel.cpp \
-  pbkdf2.cpp \
-  scrypt.cpp \
+  crypto/pbkdf2.cpp \
+  crypto/scrypt.cpp \
   chainparams.cpp \
-  db.cpp \
-  miner.cpp \
-  rpcdump.cpp \
-  rpcmining.cpp \
-  rpcwallet.cpp \
-  wallet.cpp \
-  walletdb.cpp \
+  wallet/db.cpp \
+  wallet/miner.cpp \
+  wallet/rpcdump.cpp \
+  wallet/rpcmining.cpp \
+  wallet/rpcwallet.cpp \
+  wallet/wallet.cpp \
+  wallet/walletdb.cpp \
   $(BITCOIN_CORE_H)
 
 if GLIBC_BACK_COMPAT
@@ -135,7 +149,7 @@ bitbayd_LDADD = \
   $(LIBLEVELDB_SSE42) \
   $(LIBMEMENV)
 
-bitbayd_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS)
+bitbayd_LDADD += $(BOOST_LIBS) $(BDB_LIBS) $(SSL_LIBS) $(CRYPTO_LIBS) $(MINIUPNPC_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) -lz
 
 #
 CLEANFILES = $(EXTRA_LIBRARIES)

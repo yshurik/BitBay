@@ -14,6 +14,7 @@
 
 #include <qpolygon.h>
 #include <qrect.h>
+#include <qlist.h>
 
 namespace QwtClip
 {

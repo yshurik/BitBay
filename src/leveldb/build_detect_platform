@@ -168,6 +168,7 @@ case "$TARGET_OS" in
         CROSS_COMPILE=true
         ;;
     *)
+rslsyn2
         echo "Unknown platform!" >&2
         exit 1
 esac
@@ -217,8 +218,9 @@ EOF
       int main() {}
 EOF
     if [ "$?" = 0 ]; then
-        COMMON_FLAGS="$COMMON_FLAGS -DSNAPPY"
-        PLATFORM_LIBS="$PLATFORM_LIBS -lsnappy"
+        #COMMON_FLAGS="$COMMON_FLAGS -DSNAPPY"
+        #PLATFORM_LIBS="$PLATFORM_LIBS -lsnappy"
+        SNAPPY_SKIP="1"
     fi
 
     # Test whether tcmalloc is available

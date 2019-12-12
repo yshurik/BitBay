@@ -229,7 +229,7 @@ contains(QWT_CONFIG, QwtPlot) {
 
 greaterThan(QT_MAJOR_VERSION, 4) {
 
-    QT += printsupport
+    DEFINES += QT_NO_PRINTER
     QT += concurrent
 } 
 

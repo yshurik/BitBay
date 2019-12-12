@@ -183,6 +183,9 @@ int main(int argc, char *argv[])
         app.setApplicationName("BitBay-Qt-testnet");
     else
         app.setApplicationName("BitBay-Qt");
+#ifdef USE_TESTNET
+    app.setApplicationName("BitBay-Qt-testnet");
+#endif
 
     // ... then GUI settings:
     OptionsModel optionsModel;
