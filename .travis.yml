@@ -696,11 +696,6 @@ script:
         BitBay-Wallet-Qt.app \
         -verbose=2                                                  &&
     otool -L BitBay-Wallet-Qt.app/Contents/MacOS/BitBay-Wallet-Qt   &&
-    install_name_tool \
-        -change \
-        /usr/local/Cellar/openssl/1.0.2l/lib/libcrypto.1.0.0.dylib \
-        @executable_path/../Frameworks/libcrypto.1.0.0.dylib \
-        BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib &&
     ls                                                              &&
     zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app;
   fi
@@ -759,11 +754,6 @@ script:
         BitBay-Wallet-Qt.app \
         -verbose=2                                                  &&
     otool -L BitBay-Wallet-Qt.app/Contents/MacOS/BitBay-Wallet-Qt   &&
-    install_name_tool \
-        -change \
-        /usr/local/Cellar/openssl/1.0.2l/lib/libcrypto.1.0.0.dylib \
-        @executable_path/../Frameworks/libcrypto.1.0.0.dylib \
-        BitBay-Wallet-Qt.app/Contents/Frameworks/libssl.1.0.0.dylib &&
     ls                                                              &&
     zip -r $DEPLOY_FILE BitBay-Wallet-Qt.app;
   fi
