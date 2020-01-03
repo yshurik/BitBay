@@ -1,5 +1,5 @@
 TEMPLATE = app
-TARGET = bitbayd
+TARGET = bitbay-test
 VERSION = 3.0.0
 
 count(USE_WALLET, 0) {
@@ -14,20 +14,6 @@ count(USE_TESTNET, 1) {
     contains(USE_TESTNET, 1) {
         message(Building with TESTNET enabled)
         DEFINES += USE_TESTNET
-    }
-}
-
-count(USE_FAUCET, 1) {
-    contains(USE_FAUCET, 1) {
-        message(Building with FAUCET support)
-        CONFIG += faucet
-    }
-}
-
-count(USE_EXCHANGE, 1) {
-    contains(USE_EXCHANGE, 1) {
-        message(Building with EXCHANGE support)
-        CONFIG += exchange
     }
 }
 
@@ -121,31 +107,6 @@ QMAKE_EXTRA_TARGETS += genleveldb
 # Gross ugly hack that depends on qmake internals, unfortunately there is no other way to do it.
 QMAKE_CLEAN += $$PWD/src/leveldb/out-static/libleveldb.a; cd $$PWD/src/leveldb ; $(MAKE) clean
 
-# regenerate src/build.h
-!windows|contains(USE_BUILD_INFO, 1) {
-    genbuild.depends = FORCE
-    genbuild.commands = cd $$PWD; /bin/sh share/genbuild.sh $$OUT_PWD/build/build.h
-    genbuild.target = $$OUT_PWD/build/build.h
-    PRE_TARGETDEPS += $$OUT_PWD/build/build.h
-    QMAKE_EXTRA_TARGETS += genbuild
-    DEFINES += HAVE_BUILD_INFO
-}
-
-contains(USE_O3, 1) {
-    message(Building O3 optimization flag)
-    QMAKE_CXXFLAGS_RELEASE -= -O2
-    QMAKE_CFLAGS_RELEASE -= -O2
-    QMAKE_CXXFLAGS += -O3
-    QMAKE_CFLAGS += -O3
-}
-
-*-g++-32 {
-    message("32 platform, adding -msse2 flag")
-
-    QMAKE_CXXFLAGS += -msse2
-    QMAKE_CFLAGS += -msse2
-}
-
 QMAKE_CXXFLAGS_WARN_ON = -fdiagnostics-show-option -Wall -Wextra -Wno-ignored-qualifiers -Wformat -Wformat-security -Wno-unused-parameter -Wstack-protector
 
 #json lib
@@ -155,8 +116,31 @@ include(src/json/json.pri)
 include(src/core.pri)
 
 SOURCES += \
-	src/init.cpp \
-	src/bitcoind.cpp \
+	src/test/test_bitcoin.cpp \
+	\
+	src/test/allocator_tests.cpp \
+	src/test/base32_tests.cpp \
+	src/test/base64_tests.cpp \
+	src/test/bignum_tests.cpp \
+	src/test/getarg_tests.cpp \
+	src/test/hmac_tests.cpp \
+	src/test/mruset_tests.cpp \
+	src/test/netbase_tests.cpp \
+	src/test/serialize_tests.cpp \
+	src/test/sigopcount_tests.cpp \
+	src/test/uint160_tests.cpp \
+	src/test/uint256_tests.cpp \
+
+# disabled tests
+#SOURCES += \
+#	src/test/accounting_tests.cpp \
+#	src/test/bip32_tests.cpp \
+#	src/test/base58_tests.cpp \
+#	src/test/Checkpoints_tests.cpp \
+#	src/test/key_tests.cpp \
+#	src/test/script_tests.cpp \
+#	src/test/wallet_tests.cpp \
+
 
 CODECFORTR = UTF-8
 
@@ -173,17 +157,6 @@ isEmpty(BOOST_THREAD_LIB_SUFFIX) {
 
 windows:DEFINES += WIN32
 windows:RC_FILE = src/qt/res/bitcoin-qt.rc
-
-windows:!contains(MINGW_THREAD_BUGFIX, 0) {
-    # At least qmake's win32-g++-cross profile is missing the -lmingwthrd
-    # thread-safety flag. GCC has -mthreads to enable this, but it doesn't
-    # work with static linking. -lmingwthrd must come BEFORE -lmingw, so
-    # it is prepended to QMAKE_LIBS_QT_ENTRY.
-    # It can be turned off with MINGW_THREAD_BUGFIX=0, just in case it causes
-    # any problems on some untested qmake profile now or in the future.
-    DEFINES += _MT BOOST_THREAD_PROVIDES_GENERIC_SHARED_MUTEX_ON_WIN
-    QMAKE_LIBS_QT_ENTRY = -lmingwthrd $$QMAKE_LIBS_QT_ENTRY
-}
 
 # Set libraries and includes at end, to use platform-defined defaults if not overridden
 INCLUDEPATH += $$BDB_INCLUDE_PATH 
@@ -206,6 +179,11 @@ LIBS += -lboost_filesystem$$BOOST_LIB_SUFFIX
 LIBS += -lboost_program_options$$BOOST_LIB_SUFFIX 
 LIBS += -lboost_thread$$BOOST_THREAD_LIB_SUFFIX
 LIBS += -lboost_chrono$$BOOST_LIB_SUFFIX
+LIBS += -lboost_unit_test_framework$$BOOST_LIB_SUFFIX
+
+!contains(LIBS, -static) {
+    DEFINES += BOOST_TEST_DYN_LINK
+}
 
 DISTFILES += \
     src/makefile.osx \

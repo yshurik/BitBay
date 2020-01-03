@@ -97,8 +97,6 @@ libbitcoin_server_a_SOURCES = \
   addrman.cpp \
   crypter.cpp \
   key.cpp \
-  init.cpp \
-  bitcoind.cpp \
   keystore.cpp \
   core.cpp \
   main.cpp \
@@ -137,7 +135,7 @@ libbitcoin_server_a_SOURCES += compat/glibc_compat.cpp
 endif
 
 # bitcoin binary #
-bitbayd_SOURCES = bitcoind.cpp
+bitbayd_SOURCES = bitcoind.cpp init.cpp
 bitbayd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
 bitbayd_CXXFLAGS = $(AM_CXXFLAGS) $(PIC_FLAGS) $(PIE_FLAGS)
 bitbayd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)

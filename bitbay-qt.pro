@@ -172,6 +172,8 @@ QWT_CONFIG += QwtWidgets
 DEFINES += QWT_MOC_INCLUDE
 include(src/qt/qwt/qwt.pri)
 
+SOURCES += src/init.cpp
+
 CODECFORTR = UTF-8
 
 isEmpty(QMAKE_LRELEASE) {

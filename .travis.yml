@@ -5,6 +5,12 @@ matrix:
       dist: trusty
       sudo: required
       env:
+        - DEPLOY_FILE=tests.txt
+        - ARCH="tests"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
         - DEPLOY_FILE=mainnet-node.dockerimage
         - ARCH="mainnet-node"
     - os: linux
@@ -109,6 +115,10 @@ services:
 install:
 - export REPOL=https://github.com/bitbaymarket/bitbay-prebuilt-libs1
 - export BASE1=$REPOL/releases/download/base1
+- >
+  if [[ $ARCH == "tests" ]]; then
+    export                                                      ;
+  fi
 - >
   if [[ $ARCH == "mainnet-node" ]]; then
     export                                                      ;
@@ -251,6 +261,10 @@ before_script:
 - export REPOL=https://github.com/bitbaymarket/bitbay-prebuilt-libs1
 - export BASE1=$REPOL/releases/download/base1
 - >
+  if [[ $ARCH == "tests" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
   if [[ $ARCH == "mainnet-node" ]]; then
     docker pull bitbayofficial/builder-linux64:alpine;
   fi
@@ -321,6 +335,30 @@ before_script:
 
 script:
 - cd "$TRAVIS_BUILD_DIR"
+- >
+  if [[ $ARCH == "tests" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbay-test.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2 &&
+          ./bitbay-test > tests.txt &&
+          cat tests.txt";
+  fi
 - >
   if [[ $ARCH == "mainnet-node" ]]; then
     echo "LIBS += -static" > bitbayd-local.pri &&
@@ -622,7 +660,6 @@ script:
           qmake \
             CICD=travis_x32 \
             QMAKE_LRELEASE=lrelease \
-            \"USE_QRCODE=1\" \
             bitbayd.pro && \
             mv Makefile.Release Makefile.tmp && ( \
               cat Makefile.tmp | \
@@ -641,7 +678,6 @@ script:
           qmake \
             CICD=travis_x64 \
             QMAKE_LRELEASE=lrelease \
-            \"USE_QRCODE=1\" \
             bitbayd.pro && \
             mv Makefile.Release Makefile.tmp && ( \
               cat Makefile.tmp | \

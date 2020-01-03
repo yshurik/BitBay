@@ -51,7 +51,6 @@ SOURCES += \
     $$PWD/script.cpp \
     $$PWD/core.cpp \
     $$PWD/main.cpp \
-    $$PWD/init.cpp \
     $$PWD/net.cpp \
     $$PWD/checkpoints.cpp \
     $$PWD/addrman.cpp \
