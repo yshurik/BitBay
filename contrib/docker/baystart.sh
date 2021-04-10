@@ -9,5 +9,5 @@ echo "rpcpassword=${RPC_PASS}" >> /data/bitbay.conf
 echo "rpcallowip=*" >> /data/bitbay.conf
 cat /data/bitbay.conf
 
-bitbayd -datadir=/data -logtimestamps -printtoconsole
+/usr/bin/bitbayd -datadir=/data -logtimestamps -printtoconsole $*
 

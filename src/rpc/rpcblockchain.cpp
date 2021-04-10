@@ -1,18 +1,29 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
+// Copyright (c) 2018-2020 yshurik
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <boost/assign/list_of.hpp>
+
 #include "rpcserver.h"
 #include "main.h"
+#include "base58.h"
 #include "kernel.h"
 #include "checkpoints.h"
 #include "txdb-leveldb.h"
+#include "pegdb-leveldb.h"
 
-using namespace json_spirit;
 using namespace std;
+using namespace boost;
+using namespace boost::assign;
+using namespace json_spirit;
 
-extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, json_spirit::Object& entry);
+extern void TxToJSON(const CTransaction& tx, 
+                     const uint256 hashBlock, 
+                     const MapFractions&,
+                     int nSupply,
+                     json_spirit::Object& entry);
 
 double GetDifficulty(const CBlockIndex* blockindex)
 {
@@ -108,7 +119,7 @@ double GetPoSKernelPS()
     return result;
 }
 
-Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool fPrintTransactionDetail)
+Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, const MapFractions & mapFractions, bool fPrintTransactionDetail)
 {
     Object result;
     result.push_back(Pair("hash", block.GetHash().GetHex()));
@@ -138,15 +149,18 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex, bool fPri
     result.push_back(Pair("entropybit", (int)blockindex->GetStakeEntropyBit()));
     result.push_back(Pair("modifier", strprintf("%016x", blockindex->nStakeModifier)));
     result.push_back(Pair("modifierv2", blockindex->bnStakeModifierV2.GetHex()));
+    result.push_back(Pair("pegsupplyindex", blockindex->nPegSupplyIndex));
+    result.push_back(Pair("pegvotesinflate", blockindex->nPegVotesInflate));
+    result.push_back(Pair("pegvotesdeflate", blockindex->nPegVotesDeflate));
+    result.push_back(Pair("pegvotesnochange", blockindex->nPegVotesNochange));
     Array txinfo;
-    BOOST_FOREACH (const CTransaction& tx, block.vtx)
+    for(const CTransaction& tx : block.vtx)
     {
         if (fPrintTransactionDetail)
         {
             Object entry;
-
             entry.push_back(Pair("txid", tx.GetHash().GetHex()));
-            TxToJSON(tx, 0, entry);
+            TxToJSON(tx, 0, mapFractions, blockindex->nPegSupplyIndex, entry);
 
             txinfo.push_back(entry);
         }
@@ -208,8 +222,9 @@ Value getrawmempool(const Array& params, bool fHelp)
     mempool.queryHashes(vtxid);
 
     Array a;
-    BOOST_FOREACH(const uint256& hash, vtxid)
+    for(const uint256& hash : vtxid) {
         a.push_back(hash.ToString());
+    }
 
     return a;
 }
@@ -279,66 +294,60 @@ Value getblock(const Array& params, bool fHelp)
 
     LOCK(cs_main);
 
-    //std::string strHash = params[0].get_str();
-    //uint256 hash(strHash);
     std::string strHash = params[0].get_str();
-	uint256 hash(uint256S(strHash));
+    uint256 hash(uint256S(strHash));
 
     int verbosity = 1;
     if (params.size() > 1) {
-            verbosity = params[1].get_bool() ? 1 : 0;
-    }else{
-	    verbosity = 0;	//Output RAW TX if second parameter is not set, useful for ElectrumX
+        verbosity = params[1].get_bool() ? 2 : 1;
+    } else {
+        verbosity = 1;	
+	//off: Output RAW TX if second parameter is not set, useful for ElectrumX
     }
 
     if (mapBlockIndex.count(hash) == 0)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
 
     CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[hash];
-	
-	if(!block.ReadFromDisk(pblockindex, true)){
+    CBlockIndex* pblockindex = mapBlockIndex.ref(hash);
+    
+    if(!block.ReadFromDisk(pblockindex, true)){
         // Block not found on disk. This could be because we have the block
         // header in our index but don't have the block (for example if a
         // non-whitelisted node sends us an unrequested long chain of valid
         // blocks, we add the headers to our index, but don't accept the
         // block).
-		throw JSONRPCError(RPC_MISC_ERROR, "Block not found on disk");
-	}
+        throw JSONRPCError(RPC_MISC_ERROR, "Block not found on disk");
+    }
+    
+    block.ReadFromDisk(pblockindex, true);
 
-	block.ReadFromDisk(pblockindex, true);
-	
+    MapFractions mapFractions;
+    bool fverbosity = params.size() > 1 ? params[1].get_bool() : false;
+    if (fverbosity) {
+        CPegDB pegdb("r");
+        for (const CTransaction & tx : block.vtx) {
+            for(size_t i=0; i<tx.vout.size(); i++) {
+                auto fkey = uint320(tx.GetHash(), i);
+                CFractions fractions(0, CFractions::VALUE);
+                if (pegdb.ReadFractions(fkey, fractions)) {
+                    if (fractions.Total() == tx.vout[i].nValue) {
+                        mapFractions[fkey] = fractions;
+                    }
+                }
+            }
+        }
+    }
+    
     if (verbosity <= 0)
     {
         CDataStream ssBlock(SER_NETWORK, PROTOCOL_VERSION);
         ssBlock << block;
         std::string strHex = HexStr(ssBlock.begin(), ssBlock.end());
-		//strHex.insert(0, "testar ");
         return strHex;
     }
 
-    //return blockToJSON(block, pblockindex, verbosity >= 2);
-	return blockToJSON(block, pblockindex, params.size() > 1 ? params[1].get_bool() : false);
-}
-Value getblock_old(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
-            "getblock <hash> [txinfo]\n"
-            "txinfo optional to print more detailed tx info\n"
-            "Returns details of a block with given block-hash.");
-
-    std::string strHash = params[0].get_str();
-    uint256 hash(strHash);
-
-    if (mapBlockIndex.count(hash) == 0)
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
-
-    CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[hash];
-    block.ReadFromDisk(pblockindex, true);
-
-    return blockToJSON(block, pblockindex, params.size() > 1 ? params[1].get_bool() : false);
+	return blockToJSON(block, pblockindex, mapFractions, fverbosity);
 }
 
 Value getblockbynumber(const Array& params, bool fHelp)
@@ -353,17 +362,36 @@ Value getblockbynumber(const Array& params, bool fHelp)
     if (nHeight < 0 || nHeight > nBestHeight)
         throw runtime_error("Block number out of range.");
 
+    LOCK(cs_main);
+    
     CBlock block;
-    CBlockIndex* pblockindex = mapBlockIndex[hashBestChain];
+    CBlockIndex* pblockindex = pindexBest;
     while (pblockindex->nHeight > nHeight)
         pblockindex = pblockindex->pprev;
 
     uint256 hash = *pblockindex->phashBlock;
 
-    pblockindex = mapBlockIndex[hash];
+    pblockindex = mapBlockIndex.ref(hash);
     block.ReadFromDisk(pblockindex, true);
 
-    return blockToJSON(block, pblockindex, params.size() > 1 ? params[1].get_bool() : false);
+    MapFractions mapFractions;
+    bool fverbosity = params.size() > 1 ? params[1].get_bool() : false;
+    if (fverbosity) {
+        CPegDB pegdb("r");
+        for (const CTransaction & tx : block.vtx) {
+            for(size_t i=0; i<tx.vout.size(); i++) {
+                auto fkey = uint320(tx.GetHash(), i);
+                CFractions fractions(0, CFractions::VALUE);
+                if (pegdb.ReadFractions(fkey, fractions)) {
+                    if (fractions.Total() == tx.vout[i].nValue) {
+                        mapFractions[fkey] = fractions;
+                    }
+                }
+            }
+        }
+    }
+    
+    return blockToJSON(block, pblockindex, mapFractions, fverbosity);
 }
 
 // ppcoin: get information of sync-checkpoint
@@ -427,7 +455,7 @@ Value gettxout(const Array& params, bool fHelp)
         cout << "gettxout fail, txdb.ReadTxIndex" << endl;
         return Value::null;
     }
-    if (0 <= n && n < txindex.vSpent.size()) {
+    if (0 <= n && n < long(txindex.vSpent.size())) {
         CDiskTxPos pos = txindex.vSpent[n];
         if (!pos.IsNull()) {
             // this vout is spent in next transaction
@@ -466,3 +494,367 @@ Value gettxout(const Array& params, bool fHelp)
 
     return ret;
 }
+
+Value createbootstrap(const Array& params, bool fHelp)
+{
+    if (fHelp)
+        throw runtime_error(
+            "createbootstrap\n"
+            "Create bootstrap file.");
+
+    int nWritten = 0;
+
+    Object ret;
+
+    boost::filesystem::path pathBootstrap = GetDataDir() / "bootstrap.dat";
+    FILE *file = fopen(pathBootstrap.string().c_str(), "wb");
+    CAutoFile fileout = CAutoFile(file, SER_DISK, CLIENT_VERSION);
+    if (!fileout) {
+        return JSONRPCError(RPC_MISC_ERROR, "Open bootstrap failed");
+    }
+    
+    uint256 blockHash = Params().HashGenesisBlock();
+    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(blockHash);
+    if (mi == mapBlockIndex.end()) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Genesis block not found");
+    }
+    CBlockIndex* pindex = (*mi).second;
+    while (pindex) {
+        CBlock block;
+        if (!block.ReadFromDisk(pindex, true)) {
+            throw JSONRPCError(RPC_MISC_ERROR, "Block read failed");
+        }
+        // Write index header
+        unsigned int nSize = fileout.GetSerializeSize(block);
+        fileout << FLATDATA(Params().MessageStart()) << nSize;
+        fileout << block;
+        nWritten++;
+        pindex = pindex->pnext;
+    }
+    
+    ret.push_back(Pair("written", nWritten));
+    return ret;
+}
+
+Value listunspent(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 4)
+        throw runtime_error(
+            "listunspent [minconf=1] [maxconf=9999999] [\"address\",...] [pegsupplyindex]\n"
+            "\t(wallet api)\n"
+            "\tReturns array of unspent transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tOptionally filtered to only include txouts paid to specified addresses.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, scriptPubKey, amount, liquid, reserve, confirmations}\n\n"
+
+            "listunspent address [minconf=1] [maxconf=9999999] [pegsupplyindex]\n"
+            "\t(blockchain api)\n"
+            "\tReturns array of unspent transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, amount, liquid, reserve, height, txindex, confirmations}");
+    
+    if (params.size() > 0) {
+        if (params[0].type() == str_type) {
+            return listunspent1(params, fHelp);
+        }
+    }
+    
+#ifdef ENABLE_WALLET
+    return listunspent2(params, fHelp);
+#else
+    return listunspent1(params, fHelp);
+#endif
+}
+
+Value listunspent1(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 4)
+        throw runtime_error(
+            "listunspent address [minconf=1] [maxconf=9999999] [pegsupplyindex]\n"
+            "\t(blockchain api)\n"
+            "\tReturns array of unspent transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, amount, liquid, reserve, height, txindex, confirmations}");
+
+    RPCTypeCheck(params, list_of(str_type)(int_type)(int_type)(int_type));
+
+    CBitcoinAddress address(params[0].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+params[0].get_str());
+    
+    string sAddress = params[0].get_str();
+    if (sAddress.length() != 34)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+params[0].get_str());
+    
+    int nMinDepth = 1;
+    if (params.size() > 1)
+        nMinDepth = params[1].get_int();
+
+    int nMaxDepth = 9999999;
+    if (params.size() > 2)
+        nMaxDepth = params[2].get_int();
+    
+    int nSupply = 0;
+    if (pindexBest) {
+        nSupply = pindexBest->nPegSupplyIndex;
+    }
+    if (params.size() > 3) {
+        nSupply = params[3].get_int();
+    }
+    
+    int nHeightNow = nBestHeight;
+    
+    CTxDB txdb("r");
+    CPegDB pegdb("r");
+    
+    bool fIsReady = false;
+    bool fEnabled = false;
+    txdb.ReadUtxoDbIsReady(fIsReady);
+    txdb.ReadUtxoDbEnabled(fEnabled);
+    if (!fEnabled)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Balance/unspent database is not enabled"));
+    if (!fIsReady)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Balance/unspent database is not ready (may require restart)"));
+    
+    vector<CAddressUnspent> records;
+    if (!txdb.ReadAddressUnspent(sAddress, records))
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Failed ReadAddressUnspent"));
+    
+    Array results;
+    for (const auto & record : records) {
+        int nDepth = nHeightNow - record.nHeight +1;
+        if (nDepth < nMinDepth || nDepth > nMaxDepth)
+            continue;
+        
+        uint320 txoutid(record.txoutid);
+        
+        Object entry;
+        entry.push_back(Pair("txid", txoutid.b1().GetHex()));
+        entry.push_back(Pair("vout", txoutid.b2()));
+        entry.push_back(Pair("address", sAddress));
+        entry.push_back(Pair("amount",ValueFromAmount(record.nAmount)));
+
+        CFractions fractions(record.nAmount, CFractions::STD);
+        if (record.nHeight > nPegStartHeight) {
+            if (pegdb.ReadFractions(txoutid, fractions, true /*must_have*/)) {
+                int64_t nUnspentLiquid = fractions.High(nSupply);
+                int64_t nUnspentReserve = fractions.Low(nSupply);
+                entry.push_back(Pair("liquid",ValueFromAmount(nUnspentLiquid)));
+                entry.push_back(Pair("reserve",ValueFromAmount(nUnspentReserve)));
+            }
+        } else {
+            int64_t nUnspentLiquid = fractions.High(nSupply);
+            int64_t nUnspentReserve = fractions.Low(nSupply);
+            entry.push_back(Pair("liquid",ValueFromAmount(nUnspentLiquid)));
+            entry.push_back(Pair("reserve",ValueFromAmount(nUnspentReserve)));
+        }
+        
+        entry.push_back(Pair("height", record.nHeight));
+        entry.push_back(Pair("txindex", record.nIndex));
+        entry.push_back(Pair("confirmations", nDepth));
+        results.push_back(entry);
+    }
+    
+    return results;
+}
+
+Value listfrozen(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 4)
+        throw runtime_error(
+            "listfrozen [minconf=1] [maxconf=9999999] [\"address\",...] [pegsupplyindex]\n"
+            "\t(wallet api)\n"
+            "\tReturns array of frozen transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tOptionally filtered to only include txouts paid to specified addresses.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, scriptPubKey, amount, liquid, reserve, confirmations}\n\n"
+
+            "listfrozen address [minconf=1] [maxconf=9999999] [pegsupplyindex]\n"
+            "\t(blockchain api)\n"
+            "\tReturns array of frozen transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, amount, liquid, reserve, height, txindex, confirmations}");
+    
+    if (params.size() > 0) {
+        if (params[0].type() == str_type) {
+            return listfrozen1(params, fHelp);
+        }
+    }
+    
+#ifdef ENABLE_WALLET
+    return listfrozen2(params, fHelp);
+#else
+    return listfrozen1(params, fHelp);
+#endif
+}
+
+Value listfrozen1(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 4)
+        throw runtime_error(
+            "listfrozen address [minconf=1] [maxconf=9999999] [pegsupplyindex]\n"
+            "\t(blockchain api)\n"
+            "\tReturns array of frozen transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, amount, liquid, reserve, height, txindex, confirmations}");
+
+    RPCTypeCheck(params, list_of(str_type)(int_type)(int_type)(int_type));
+
+    CBitcoinAddress address(params[0].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+params[0].get_str());
+    
+    string sAddress = params[0].get_str();
+    if (sAddress.length() != 34)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+params[0].get_str());
+    
+    int nMinDepth = 1;
+    if (params.size() > 1)
+        nMinDepth = params[1].get_int();
+
+    int nMaxDepth = 9999999;
+    if (params.size() > 2)
+        nMaxDepth = params[2].get_int();
+    
+    int nSupply = 0;
+    if (pindexBest) {
+        nSupply = pindexBest->nPegSupplyIndex;
+    }
+    if (params.size() > 3) {
+        nSupply = params[3].get_int();
+    }
+    
+    int nHeightNow = nBestHeight;
+    
+    CTxDB txdb("r");
+    CPegDB pegdb("r");
+    
+    bool fIsReady = false;
+    bool fEnabled = false;
+    txdb.ReadUtxoDbIsReady(fIsReady);
+    txdb.ReadUtxoDbEnabled(fEnabled);
+    if (!fEnabled)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Balance/unspent database is not enabled"));
+    if (!fIsReady)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Balance/unspent database is not ready (may require restart)"));
+    
+    vector<CAddressUnspent> records;
+    if (!txdb.ReadAddressFrozen(sAddress, records))
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Failed ReadAddressFrozen"));
+    
+    Array results;
+    for (const auto & record : records) {
+        int nDepth = nHeightNow - record.nHeight +1;
+        if (nDepth < nMinDepth || nDepth > nMaxDepth)
+            continue;
+        
+        uint320 txoutid(record.txoutid);
+        
+        Object entry;
+        entry.push_back(Pair("txid", txoutid.b1().GetHex()));
+        entry.push_back(Pair("vout", txoutid.b2()));
+        entry.push_back(Pair("address", sAddress));
+        entry.push_back(Pair("amount",ValueFromAmount(record.nAmount)));
+
+        CFractions fractions(record.nAmount, CFractions::STD);
+        if (record.nHeight > nPegStartHeight) {
+            if (pegdb.ReadFractions(txoutid, fractions, true /*must_have*/)) {
+                int64_t nUnspentLiquid = fractions.High(nSupply);
+                int64_t nUnspentReserve = fractions.Low(nSupply);
+                entry.push_back(Pair("liquid",ValueFromAmount(nUnspentLiquid)));
+                entry.push_back(Pair("reserve",ValueFromAmount(nUnspentReserve)));
+            }
+        } else {
+            int64_t nUnspentLiquid = fractions.High(nSupply);
+            int64_t nUnspentReserve = fractions.Low(nSupply);
+            entry.push_back(Pair("liquid",ValueFromAmount(nUnspentLiquid)));
+            entry.push_back(Pair("reserve",ValueFromAmount(nUnspentReserve)));
+        }
+        
+        entry.push_back(Pair("height", record.nHeight));
+        entry.push_back(Pair("txindex", record.nIndex));
+        entry.push_back(Pair("confirmations", nDepth));
+        entry.push_back(Pair("unlocktime", record.nLockTime));
+        results.push_back(entry);
+    }
+    
+    return results;
+}
+
+Value balance(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "balance address [pegsupplyindex]\n"
+            "\t(blockchain api)\n"
+            "\tReturns current balance of the specified address\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n");
+
+    RPCTypeCheck(params, list_of(str_type)(int_type));
+
+    CBitcoinAddress address(params[0].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+params[0].get_str());
+    
+    string sAddress = params[0].get_str();
+    if (sAddress.length() != 34)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+params[0].get_str());
+    
+    int nSupply = 0;
+    if (pindexBest) {
+        nSupply = pindexBest->nPegSupplyIndex;
+    }
+    if (params.size() > 1) {
+        nSupply = params[1].get_int();
+    }
+    
+    CTxDB txdb("r");
+    
+    bool fIsReady = false;
+    bool fEnabled = false;
+    txdb.ReadUtxoDbIsReady(fIsReady);
+    txdb.ReadUtxoDbEnabled(fEnabled);
+    if (!fEnabled)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Balance/unspent database is not enabled"));
+    if (!fIsReady)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Balance/unspent database is not ready (may require restart)"));
+    
+    int64_t nLastIndex = -1;
+    CAddressBalance balance;
+    bool fFound = txdb.ReadAddressLastBalance(sAddress, balance, nLastIndex);
+    
+    Object result;
+    
+    result.push_back(Pair("address", sAddress));
+    result.push_back(Pair("amount",ValueFromAmount(balance.nBalance)));
+    result.push_back(Pair("frozen",ValueFromAmount(balance.nFrozen)));
+
+    int64_t nUnspentLiquid = 0;
+    int64_t nUnspentReserve = 0;
+    if (fFound) {
+        CFractions fractions(balance.nBalance - balance.nFrozen, CFractions::STD);
+        if (!txdb.ReadPegBalance(sAddress, fractions))
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("ReadPegBalance failed"));
+        nUnspentLiquid = fractions.High(nSupply);
+        nUnspentReserve = fractions.Low(nSupply);
+    }
+    result.push_back(Pair("liquid",ValueFromAmount(nUnspentLiquid)));
+    result.push_back(Pair("reserve",ValueFromAmount(nUnspentReserve)));
+    result.push_back(Pair("transactions", nLastIndex+1));
+    
+    return result;
+}
+
+

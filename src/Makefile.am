@@ -60,6 +60,7 @@ BITCOIN_CORE_H = \
   txdb-leveldb.h \
   txmempool.h \
   util.h \
+  utilstrencodings.h \
   hash.h \
   noui.h \
   kernel.h \
@@ -74,11 +75,11 @@ BITCOIN_CORE_H = \
   wallet/wallet.h \
   wallet/walletdb.h \
   peg/peg.h \
+  peg/pegstd.h \
   peg/pegdata.h \
   peg/pegdb-leveldb.h \
   peg/pegops.h \
-  peg/pegopsp.h \
-  peg/pegutil.h
+  peg/pegopsp.h
 
 build/build.h: FORCE
 	@$(MKDIR_P) $(builddir)/build
@@ -97,6 +98,8 @@ libbitcoin_server_a_SOURCES = \
   addrman.cpp \
   crypter.cpp \
   key.cpp \
+  init.cpp \
+  bitcoind.cpp \
   keystore.cpp \
   core.cpp \
   main.cpp \
@@ -115,6 +118,7 @@ libbitcoin_server_a_SOURCES = \
   txdb-leveldb.cpp \
   txmempool.cpp \
   util.cpp \
+  utilstrencodings.cpp \
   hash.cpp \
   noui.cpp \
   kernel.cpp \
@@ -128,6 +132,21 @@ libbitcoin_server_a_SOURCES = \
   wallet/rpcwallet.cpp \
   wallet/wallet.cpp \
   wallet/walletdb.cpp \
+  peg/peg.cpp \
+  peg/pegstd.cpp \
+  peg/peg_compat.cpp \
+  peg/pegdata.cpp \
+  peg/pegdata_compat.cpp \
+  peg/pegdb-leveldb.cpp \
+  peg/pegfractions.cpp \
+  peg/peglevel.cpp \
+  peg/pegops.cpp \
+  peg/pegopsp.cpp \
+  exchange/rpcdeposit.cpp \
+  exchange/rpcexchange.cpp \
+  exchange/rpcexchange_util.cpp \
+  exchange/rpcfaucet.cpp \
+  exchange/rpcwithdraw.cpp \
   $(BITCOIN_CORE_H)
 
 if GLIBC_BACK_COMPAT
@@ -135,7 +154,7 @@ libbitcoin_server_a_SOURCES += compat/glibc_compat.cpp
 endif
 
 # bitcoin binary #
-bitbayd_SOURCES = bitcoind.cpp init.cpp
+bitbayd_SOURCES = bitcoind.cpp
 bitbayd_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
 bitbayd_CXXFLAGS = $(AM_CXXFLAGS) $(PIC_FLAGS) $(PIE_FLAGS)
 bitbayd_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS)

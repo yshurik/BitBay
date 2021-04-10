@@ -99,12 +99,12 @@ public:
 };
 
 // CreateNewBlock: create new block (without proof-of-work/proof-of-stake)
-CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFees)
+unique_ptr<CBlock> CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFees)
 {
     // Create new block
-    auto_ptr<CBlock> pblock(new CBlock());
+    unique_ptr<CBlock> pblock(new CBlock());
     if (!pblock.get())
-        return NULL;
+        return nullptr;
 
     CBlockIndex* pindexPrev = pindexBest;
     int nHeight = pindexPrev->nHeight + 1;
@@ -119,7 +119,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
     {
         CPubKey pubkey;
         if (!reservekey.GetReservedKey(pubkey))
-            return NULL;
+            return nullptr;
         txNew.vout[0].scriptPubKey.SetDestination(pubkey.GetID());
     }
     else
@@ -165,6 +165,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
     {
         LOCK2(cs_main, mempool.cs);
         CTxDB txdb("r");
+        CPegDB pegdb("r");
 
         // Priority order to process transactions
         list<COrphan> vOrphan; // list memory doesn't move
@@ -172,7 +173,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
 
         // This vector will be sorted into a priority queue:
         vector<TxPriority> vecPriority;
-        vecPriority.reserve(mempool.mapTx.size());
+        vecPriority.reserve(mempool.mapTx.size()+1);
         for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); mi != mempool.mapTx.end(); ++mi)
         {
             CTransaction& tx = (*mi).second;
@@ -183,7 +184,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
             double dPriority = 0;
             int64_t nTotalIn = 0;
             bool fMissingInputs = false;
-            BOOST_FOREACH(const CTxIn& txin, tx.vin)
+            for(const CTxIn& txin : tx.vin)
             {
                 // Read prev transaction
                 CTransaction txPrev;
@@ -240,9 +241,11 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
             else
                 vecPriority.push_back(TxPriority(dPriority, dFeePerKb, &(*mi).second));
         }
-
+        
         // Collect transactions into block
         map<uint256, CTxIndex> mapTestPool;
+        MapFractions mapTestFractionsPool;
+        CFractions feesFractions;
         uint64_t nBlockSize = 1000;
         uint64_t nBlockTx = 0;
         int nBlockSigOps = 100;
@@ -276,7 +279,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
                 continue;
 
             // Transaction fee
-            int64_t nMinFee = GetMinFee(tx, nBlockSize, GMF_BLOCK);
+            int64_t nMinFee = GetMinFee(tx, nHeight, nBlockSize, GMF_BLOCK);
 
             // Skip free transactions if we're past the minimum block size:
             if (fSortedByFee && (dFeePerKb < nMinTxFee) && (nBlockSize + nTxSize >= nBlockMinSize))
@@ -295,9 +298,11 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
             // Connecting shouldn't fail due to dependency on other memory pool transactions
             // because we're already processing them in order of dependency
             map<uint256, CTxIndex> mapTestPoolTmp(mapTestPool);
+            MapFractions mapTestFractionsPoolTmp(mapTestFractionsPool);
             MapPrevTx mapInputs;
+            MapFractions mapInputsFractions;
             bool fInvalid;
-            if (!tx.FetchInputs(txdb, mapTestPoolTmp, false, true, mapInputs, fInvalid))
+            if (!tx.FetchInputs(txdb, pegdb, mapTestPoolTmp, mapTestFractionsPoolTmp, false, true, mapInputs, mapInputsFractions, fInvalid))
                 continue;
 
             int64_t nTxFees = tx.GetValueIn(mapInputs)-tx.GetValueOut();
@@ -311,9 +316,13 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
             // Note that flags: we don't want to set mempool/IsStandard()
             // policy here, but we still have to ensure that the block we
             // create only contains transactions that are valid in new blocks.
-            if (!tx.ConnectInputs(txdb, mapInputs, mapTestPoolTmp, CDiskTxPos(1,1,1), pindexPrev, false, true, MANDATORY_SCRIPT_VERIFY_FLAGS))
+            if (!tx.ConnectInputs(mapInputs, mapInputsFractions,
+                                  mapTestPoolTmp, mapTestFractionsPoolTmp,
+                                  feesFractions,
+                                  CDiskTxPos(1,1,1), pindexPrev, false, true, MANDATORY_SCRIPT_VERIFY_FLAGS))
                 continue;
-            mapTestPoolTmp[tx.GetHash()] = CTxIndex(CDiskTxPos(1,1,1), tx.vout.size());
+            mapTestPoolTmp[tx.GetHash()] = CTxIndex(CDiskTxPos(1,1,1), tx.vout.size(), 
+                                                    0/*nHeight*/, nBlockTx +2 /*coinbase+coinstake*/);
             swap(mapTestPool, mapTestPoolTmp);
 
             // Added
@@ -333,7 +342,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
             uint256 hash = tx.GetHash();
             if (mapDependers.count(hash))
             {
-                BOOST_FOREACH(COrphan* porphan, mapDependers[hash])
+                for(COrphan* porphan : mapDependers[hash])
                 {
                     if (!porphan->setDependsOn.empty())
                     {
@@ -368,7 +377,7 @@ CBlock* CreateNewBlock(CReserveKey& reservekey, bool fProofOfStake, int64_t* pFe
         pblock->nNonce         = 0;
     }
 
-    return pblock.release();
+    return pblock;
 }
 
 
@@ -486,7 +495,7 @@ bool CheckStake(CBlock* pblock, CWallet& wallet)
         return error("CheckStake() : %s is not a proof-of-stake block", hashBlock.GetHex());
 
     // verify hash target and signature of coinstake tx
-    if (!CheckProofOfStake(mapBlockIndex[pblock->hashPrevBlock], pblock->vtx[1], pblock->nBits, proofHash, hashTarget))
+    if (!CheckProofOfStake(mapBlockIndex.ref(pblock->hashPrevBlock), pblock->vtx[1], pblock->nBits, proofHash, hashTarget))
         return error("CheckStake() : proof-of-stake checking failed");
 
     //// debug print
@@ -533,6 +542,12 @@ void ThreadStakeMiner(CWallet *pwallet)
             MilliSleep(1000);
         }
 
+        while (fAboutToSendGUI)
+        {
+            nLastCoinStakeSearchInterval = 0;
+            MilliSleep(1000);
+        }
+        
         while (vNodes.empty() || IsInitialBlockDownload())
         {
             nLastCoinStakeSearchInterval = 0;
@@ -554,7 +569,7 @@ void ThreadStakeMiner(CWallet *pwallet)
         // Create new block
         //
         int64_t nFees;
-        auto_ptr<CBlock> pblock(CreateNewBlock(reservekey, true, &nFees));
+        unique_ptr<CBlock> pblock(CreateNewBlock(reservekey, true, &nFees));
         if (!pblock.get())
             return;
 

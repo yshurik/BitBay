@@ -109,6 +109,22 @@ public:
 
     bool ReadAccount(const std::string& strAccount, CAccount& account);
     bool WriteAccount(const std::string& strAccount, const CAccount& account);
+    
+    bool ReadRewardAddress(std::string& addr);
+    bool WriteRewardAddress(const std::string& addr);
+
+    bool ReadSupportEnabled(bool& on);
+    bool WriteSupportEnabled(bool on);
+    
+    bool ReadSupportAddress(std::string& addr);
+    bool WriteSupportAddress(const std::string& addr);
+
+    bool ReadSupportPart(uint32_t& addr);
+    bool WriteSupportPart(const uint32_t& addr);
+
+    bool ReadConsolidateEnabled(bool& on);
+    bool WriteConsolidateEnabled(bool on);
+    
 private:
     bool WriteAccountingEntry(const uint64_t nAccEntryNum, const CAccountingEntry& acentry);
 public:

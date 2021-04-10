@@ -1,23 +1,29 @@
-// Copyright (c) 2018 yshurik
+// Copyright (c) 2018-2020 yshurik
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "blockchainpage.h"
 #include "ui_blockchainpage.h"
 #include "ui_fractionsdialog.h"
+#include "txdetailswidget.h"
 
 #include "main.h"
 #include "base58.h"
 #include "txdb.h"
+#include "peg.h"
+#include "net.h"
 #include "guiutil.h"
+#include "clientmodel.h"
 #include "blockchainmodel.h"
+#include "itemdelegates.h"
 #include "metatypes.h"
 #include "qwt/qwt_plot.h"
 #include "qwt/qwt_plot_curve.h"
 #include "qwt/qwt_plot_barchart.h"
 
-#include <QTime>
 #include <QMenu>
+#include <QTime>
+#include <QTimer>
 #include <QDebug>
 #include <QPainter>
 #include <QKeyEvent>
@@ -31,10 +37,14 @@
 #include "json/json_spirit_writer_template.h"
 extern json_spirit::Object blockToJSON(const CBlock& block,
                                        const CBlockIndex* blockindex,
+                                       const MapFractions &, 
                                        bool fPrintTransactionDetail);
 extern void TxToJSON(const CTransaction& tx,
-                     const uint256 hashBlock,
+                     const uint256 hashBlock, 
+                     const MapFractions&,
+                     int nSupply,
                      json_spirit::Object& entry);
+extern double GetDifficulty(const CBlockIndex* blockindex = NULL);
 
 BlockchainPage::BlockchainPage(QWidget *parent) :
     QDialog(parent),
@@ -42,6 +52,13 @@ BlockchainPage::BlockchainPage(QWidget *parent) :
 {
     ui->setupUi(this);
     GUIUtil::SetBitBayFonts(this);
+
+    txDetails = new TxDetailsWidget(this);
+    txDetails->layout()->setMargin(0);
+    auto txDetailsLayout = new QVBoxLayout;
+    txDetailsLayout->setMargin(0);
+    txDetailsLayout->addWidget(txDetails);
+    ui->txDetails->setLayout(txDetailsLayout);
 
     model = new BlockchainModel(this);
     ui->blockchainView->setModel(model);
@@ -54,20 +71,23 @@ BlockchainPage::BlockchainPage(QWidget *parent) :
     connect(ui->buttonChain, SIGNAL(clicked()), this, SLOT(showChainPage()));
     connect(ui->buttonBlock, SIGNAL(clicked()), this, SLOT(showBlockPage()));
     connect(ui->buttonTx, SIGNAL(clicked()), this, SLOT(showTxPage()));
-
+    connect(ui->buttonAddress, SIGNAL(clicked()), this, SLOT(showBalancePage()));
+    connect(ui->buttonUnspent, SIGNAL(clicked()), this, SLOT(showUnspentPage()));
+    connect(ui->buttonNet, SIGNAL(clicked()), this, SLOT(showNetPage()));
+    connect(ui->buttonMempool, SIGNAL(clicked()), this, SLOT(showMempoolPage()));
+    
     ui->blockchainView->setContextMenuPolicy(Qt::CustomContextMenu);
     ui->blockValues->setContextMenuPolicy(Qt::CustomContextMenu);
-    ui->txValues->setContextMenuPolicy(Qt::CustomContextMenu);
+    ui->netNodes->setContextMenuPolicy(Qt::CustomContextMenu);
     ui->blockchainView->installEventFilter(new BlockchainPageChainEvents(ui->blockchainView, this));
     ui->blockValues->installEventFilter(new BlockchainPageBlockEvents(ui->blockValues, this));
-    ui->txValues->installEventFilter(new BlockchainPageTxEvents(ui->blockValues, this));
 
     connect(ui->blockchainView, SIGNAL(customContextMenuRequested(const QPoint &)),
             this, SLOT(openChainMenu(const QPoint &)));
     connect(ui->blockValues, SIGNAL(customContextMenuRequested(const QPoint &)),
             this, SLOT(openBlockMenu(const QPoint &)));
-    connect(ui->txValues, SIGNAL(customContextMenuRequested(const QPoint &)),
-            this, SLOT(openTxMenu(const QPoint &)));
+    connect(ui->netNodes, SIGNAL(customContextMenuRequested(const QPoint &)),
+            this, SLOT(openNetMenu(const QPoint &)));
 
     connect(ui->blockchainView, SIGNAL(activated(const QModelIndex &)),
             this, SLOT(openBlock(const QModelIndex &)));
@@ -75,14 +95,6 @@ BlockchainPage::BlockchainPage(QWidget *parent) :
             this, SLOT(openTx(QTreeWidgetItem*,int)));
     connect(ui->blockValues, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
             this, SLOT(openBlock(QTreeWidgetItem*,int)));
-    connect(ui->txInputs, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
-            this, SLOT(openFractions(QTreeWidgetItem*,int)));
-    connect(ui->txOutputs, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
-            this, SLOT(openFractions(QTreeWidgetItem*,int)));
-    connect(ui->txInputs, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
-            this, SLOT(openTx(QTreeWidgetItem*,int)));
-    connect(ui->txOutputs, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
-            this, SLOT(openTx(QTreeWidgetItem*,int)));
 
     QFont font = GUIUtil::bitcoinAddressFont();
     qreal pt = font.pointSizeF()*0.8;
@@ -105,64 +117,106 @@ BlockchainPage::BlockchainPage(QWidget *parent) :
             text-align: left;
         }
     )";
-    ui->txValues->setStyleSheet(hstyle);
-    ui->txInputs->setStyleSheet(hstyle);
-    ui->txOutputs->setStyleSheet(hstyle);
     ui->blockValues->setStyleSheet(hstyle);
     ui->blockchainView->setStyleSheet(hstyle);
+    ui->balanceCurrent->setStyleSheet(hstyle);
+    ui->balanceValues->setStyleSheet(hstyle);
+    ui->utxoValues->setStyleSheet(hstyle);
+    ui->netNodes->setStyleSheet(hstyle);
+    ui->mempoolView->setStyleSheet(hstyle);
 
-    ui->txValues->setFont(font);
-    ui->txInputs->setFont(font);
-    ui->txOutputs->setFont(font);
     ui->blockValues->setFont(font);
     ui->blockchainView->setFont(font);
+    ui->balanceCurrent->setFont(font);
+    ui->balanceValues->setFont(font);
+    ui->utxoValues->setFont(font);
+    ui->netNodes->setFont(font);
+    ui->mempoolView->setFont(font);
 
-    ui->txValues->header()->setFont(font);
-    ui->txInputs->header()->setFont(font);
-    ui->txOutputs->header()->setFont(font);
     ui->blockValues->header()->setFont(font);
     ui->blockchainView->header()->setFont(font);
-
-    ui->txValues->header()->resizeSection(0 /*property*/, 250);
-    ui->txInputs->header()->resizeSection(0 /*n*/, 50);
-    ui->txOutputs->header()->resizeSection(0 /*n*/, 50);
-    ui->txInputs->header()->resizeSection(1 /*tx*/, 140);
-    ui->txOutputs->header()->resizeSection(1 /*tx*/, 140);
-    ui->txInputs->header()->resizeSection(2 /*addr*/, 280);
-    ui->txOutputs->header()->resizeSection(2 /*addr*/, 280);
-    ui->txInputs->header()->resizeSection(3 /*value*/, 180);
-    ui->txOutputs->header()->resizeSection(3 /*value*/, 180);
-
-    auto txInpValueDelegate = new LeftSideIconItemDelegate(ui->txInputs);
-    auto txOutValueDelegate = new LeftSideIconItemDelegate(ui->txOutputs);
-    ui->txInputs->setItemDelegateForColumn(3 /*value*/, txInpValueDelegate);
-    ui->txOutputs->setItemDelegateForColumn(3 /*value*/, txOutValueDelegate);
-
-    auto txInpFractionsDelegate = new FractionsItemDelegate(ui->txInputs);
-    auto txOutFractionsDelegate = new FractionsItemDelegate(ui->txOutputs);
-    ui->txInputs->setItemDelegateForColumn(4 /*frac*/, txInpFractionsDelegate);
-    ui->txOutputs->setItemDelegateForColumn(4 /*frac*/, txOutFractionsDelegate);
+    ui->balanceCurrent->header()->setFont(font);
+    ui->balanceValues->header()->setFont(font);
+    ui->utxoValues->header()->setFont(font);
+    ui->netNodes->header()->setFont(font);
+    ui->mempoolView->header()->setFont(font);
 
     connect(ui->lineJumpToBlock, SIGNAL(returnPressed()),
             this, SLOT(jumpToBlock()));
     connect(ui->lineFindBlock, SIGNAL(returnPressed()),
             this, SLOT(openBlockFromInput()));
+    connect(ui->lineBalanceAddress, SIGNAL(returnPressed()),
+            this, SLOT(openBalanceFromInput()));
+    connect(ui->lineUtxoAddress, SIGNAL(returnPressed()),
+            this, SLOT(openUnspentFromInput()));
     connect(ui->lineTx, SIGNAL(returnPressed()),
             this, SLOT(openTxFromInput()));
+    
+    ui->netNodes->header()->resizeSection(0 /*addr*/,       250);
+    ui->netNodes->header()->resizeSection(1 /*protocol*/,   100);
+    ui->netNodes->header()->resizeSection(2 /*version*/,    250);
+    
+    ui->balanceValues->header()->resizeSection(0 /*n*/,         70);
+    ui->balanceValues->header()->resizeSection(1 /*tx*/,        100);
+    ui->balanceValues->header()->resizeSection(2 /*credit*/,    180);
+    ui->balanceValues->header()->resizeSection(3 /*debit */,    180);
+    ui->balanceValues->header()->resizeSection(4 /*balance*/,   180);
+    ui->balanceValues->header()->resizeSection(5 /*frozen*/,    180);
 
-    pmChange = QPixmap(":/icons/change");
-    pmChange = pmChange.scaled(32,32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    pmFrozenF = QPixmap(":/icons/frost");
-    pmFrozenF = pmFrozenF.scaled(32,32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    pmFrozenV = QPixmap(":/icons/frostr");
-    pmFrozenV = pmFrozenV.scaled(32,32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    pmFrozenL = QPixmap(":/icons/frostl");
-    pmFrozenL = pmFrozenL.scaled(32,32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    ui->utxoValues->header()->resizeSection(0 /*n*/,        70);
+    ui->utxoValues->header()->resizeSection(1 /*tx*/,       100);
+    ui->utxoValues->header()->resizeSection(2 /*liquid*/,   180);
+    ui->utxoValues->header()->resizeSection(3 /*reserve*/,  180);
+    ui->utxoValues->header()->resizeSection(4 /*amount*/,   180);
+    ui->utxoValues->header()->resizeSection(5 /*F*/,        20);
+    
+    connect(txDetails, SIGNAL(openAddressBalance(QString)),
+            this, SLOT(openBalanceFromTx(QString)));
+    connect(ui->balanceCurrent, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
+            this, SLOT(openUnspentFromBalance(QTreeWidgetItem*,int)));
+    connect(ui->balanceValues, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
+            this, SLOT(openTxFromBalance(QTreeWidgetItem*,int)));
+    connect(ui->utxoValues, SIGNAL(itemDoubleClicked(QTreeWidgetItem*,int)),
+            this, SLOT(openTxFromUnspent(QTreeWidgetItem*,int)));
+    
+    ui->balanceCurrent->setContextMenuPolicy(Qt::CustomContextMenu);
+    ui->balanceValues->setContextMenuPolicy(Qt::CustomContextMenu);
+    ui->utxoValues->setContextMenuPolicy(Qt::CustomContextMenu);
+    
+    connect(ui->balanceCurrent, SIGNAL(customContextMenuRequested(const QPoint &)),
+            this, SLOT(openBalanceMenu1(const QPoint &)));
+    connect(ui->balanceValues, SIGNAL(customContextMenuRequested(const QPoint &)),
+            this, SLOT(openBalanceMenu2(const QPoint &)));
+    connect(ui->utxoValues, SIGNAL(customContextMenuRequested(const QPoint &)),
+            this, SLOT(openUnspentMenu(const QPoint &)));
+    
+    QTimer * t = new QTimer(this);
+    t->setInterval(10 * 1000);
+    connect(t, SIGNAL(timeout()), this, SLOT(updateMempool()));
+    t->start();
 }
 
 BlockchainPage::~BlockchainPage()
 {
     delete ui;
+}
+
+void BlockchainPage::showEvent(QShowEvent * se)
+{
+    static bool first_show = true;
+    if (first_show) {
+        first_show = false;
+        {
+            CTxDB txdb("r");
+            bool fIsReady = false;
+            bool fEnabled = false;
+            txdb.ReadUtxoDbIsReady(fIsReady);
+            txdb.ReadUtxoDbEnabled(fEnabled);
+            ui->buttonAddress->setEnabled(/*fIsReady && */fEnabled);
+            ui->buttonUnspent->setEnabled(/*fIsReady && */fEnabled);
+        }
+    }
+    QDialog::showEvent(se);
 }
 
 BlockchainModel * BlockchainPage::blockchainModel() const
@@ -183,6 +237,35 @@ void BlockchainPage::showBlockPage()
 void BlockchainPage::showTxPage()
 {
     ui->tabs->setCurrentWidget(ui->pageTx);
+}
+
+void BlockchainPage::showBalancePage()
+{
+    ui->tabs->setCurrentWidget(ui->pageAddress);
+}
+
+void BlockchainPage::showUnspentPage()
+{
+    ui->tabs->setCurrentWidget(ui->pageUtxo);
+}
+
+void BlockchainPage::showNetPage()
+{
+    ui->tabs->setCurrentWidget(ui->pageNet);
+}
+
+void BlockchainPage::showMempoolPage()
+{
+    ui->tabs->setCurrentWidget(ui->pageMempool);
+}
+
+void BlockchainPage::jumpToTop()
+{
+    auto mi = ui->blockchainView->model()->index(0, 0);
+    ui->blockchainView->setCurrentIndex(QModelIndex());
+    ui->blockchainView->selectionModel()->clearSelection();
+    ui->blockchainView->scrollTo(mi, QAbstractItemView::PositionAtCenter);
+    ui->blockchainView->setFocus();
 }
 
 void BlockchainPage::jumpToBlock()
@@ -258,10 +341,28 @@ void BlockchainPage::openChainMenu(const QPoint & pos)
             return;
 
         CBlock block;
-        auto pblockindex = mapBlockIndex[hash];
+        auto pblockindex = mapBlockIndex.ref(hash);
         block.ReadFromDisk(pblockindex, true);
 
-        json_spirit::Value result = blockToJSON(block, pblockindex, false);
+        // todo (extended)
+        MapFractions mapFractions;
+        {
+            LOCK(cs_main);
+            CPegDB pegdb("r");
+            for (const CTransaction & tx : block.vtx) {
+                for(size_t i=0; i<tx.vout.size(); i++) {
+                    auto fkey = uint320(tx.GetHash(), i);
+                    CFractions fractions(0, CFractions::VALUE);
+                    if (pegdb.ReadFractions(fkey, fractions)) {
+                        if (fractions.Total() == tx.vout[i].nValue) {
+                            mapFractions[fkey] = fractions;
+                        }
+                    }
+                }
+            }
+        }
+        
+        json_spirit::Value result = blockToJSON(block, pblockindex, mapFractions, false);
         string str = json_spirit::write_string(result, true);
 
         QApplication::clipboard()->setText(
@@ -284,10 +385,27 @@ bool BlockchainPageChainEvents::eventFilter(QObject *obj, QEvent *event)
                 return true;
 
             CBlock block;
-            auto pblockindex = mapBlockIndex[hash];
+            auto pblockindex = mapBlockIndex.ref(hash);
             block.ReadFromDisk(pblockindex, true);
 
-            json_spirit::Value result = blockToJSON(block, pblockindex, false);
+            MapFractions mapFractions;
+            {
+                LOCK(cs_main);
+                CPegDB pegdb("r");
+                for (const CTransaction & tx : block.vtx) {
+                    for(size_t i=0; i<tx.vout.size(); i++) {
+                        auto fkey = uint320(tx.GetHash(), i);
+                        CFractions fractions(0, CFractions::VALUE);
+                        if (pegdb.ReadFractions(fkey, fractions)) {
+                            if (fractions.Total() == tx.vout[i].nValue) {
+                                mapFractions[fkey] = fractions;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            json_spirit::Value result = blockToJSON(block, pblockindex, mapFractions, false);
             string str = json_spirit::write_string(result, true);
 
             QApplication::clipboard()->setText(
@@ -322,7 +440,7 @@ void BlockchainPage::openBlock(uint256 hash)
     LOCK(cs_main);
     if (mapBlockIndex.find(currentBlock) == mapBlockIndex.end())
         return;
-    CBlockIndex* pblockindex = mapBlockIndex[currentBlock];
+    CBlockIndex* pblockindex = mapBlockIndex.ref(currentBlock);
     if (!pblockindex)
         return;
     showBlockPage();
@@ -344,11 +462,16 @@ void BlockchainPage::openBlock(uint256 hash)
     if (pblockindex->pnext) {
         nbhash = QString::fromStdString(pblockindex->pnext->GetBlockHash().ToString());
     }
-    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Next",nbhash})));
-    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Previous",pbhash})));
-
     CBlock block;
     block.ReadFromDisk(pblockindex, true);
+
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Next",nbhash})));
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Previous",pbhash})));
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Version",QString::number(block.nVersion)})));
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Block Bits", QString::fromStdString(strprintf("%08x", pblockindex->nBits))})));
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Difficulty", QString::number(GetDifficulty(pblockindex))})));
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Block Trust",QString::fromStdString(pblockindex->GetBlockTrust().ToString())})));
+    ui->blockValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Chain Trust",QString::fromStdString(pblockindex->nChainTrust.ToString())})));
 
     int idx = 0;
     for(const CTransaction & tx : block.vtx) {
@@ -396,10 +519,27 @@ void BlockchainPage::openBlockMenu(const QPoint & pos)
             return;
 
         CBlock block;
-        auto pblockindex = mapBlockIndex[hash];
+        auto pblockindex = mapBlockIndex.ref(hash);
         block.ReadFromDisk(pblockindex, true);
 
-        json_spirit::Value result = blockToJSON(block, pblockindex, false);
+        MapFractions mapFractions;
+        {
+            LOCK(cs_main);
+            CPegDB pegdb("r");
+            for (const CTransaction & tx : block.vtx) {
+                for(size_t i=0; i<tx.vout.size(); i++) {
+                    auto fkey = uint320(tx.GetHash(), i);
+                    CFractions fractions(0, CFractions::VALUE);
+                    if (pegdb.ReadFractions(fkey, fractions)) {
+                        if (fractions.Total() == tx.vout[i].nValue) {
+                            mapFractions[fkey] = fractions;
+                        }
+                    }
+                }
+            }
+        }
+        
+        json_spirit::Value result = blockToJSON(block, pblockindex, mapFractions, false);
         string str = json_spirit::write_string(result, true);
 
         QApplication::clipboard()->setText(
@@ -407,6 +547,134 @@ void BlockchainPage::openBlockMenu(const QPoint & pos)
         );
     });
     m.exec(ui->blockValues->viewport()->mapToGlobal(pos));
+}
+
+void BlockchainPage::openNetMenu(const QPoint & pos)
+{
+    QModelIndex mi = ui->netNodes->indexAt(pos);
+    if (!mi.isValid()) return;
+    auto model = mi.model();
+    if (!model) return;
+
+    QMenu m;
+
+    auto a = m.addAction(tr("Copy Value"));
+    connect(a, &QAction::triggered, [&] {
+        QModelIndex mi2 = model->index(mi.row(), mi.column());
+        QApplication::clipboard()->setText(
+            mi2.data(Qt::DisplayRole).toString()
+        );
+    });
+    a = m.addAction(tr("Copy All Rows"));
+    connect(a, &QAction::triggered, [&] {
+        QString text;
+        for(int r=0; r<model->rowCount(); r++) {
+            for(int c=0; c<model->columnCount(); c++) {
+                if (c>0) text += "\t";
+                QModelIndex mi2 = model->index(r, c);
+                text += mi2.data(Qt::DisplayRole).toString();
+            }
+            text += "\n";
+        }
+        QApplication::clipboard()->setText(text);
+    });
+    m.exec(ui->netNodes->viewport()->mapToGlobal(pos));
+}
+
+void BlockchainPage::openBalanceMenu1(const QPoint & pos)
+{
+    QModelIndex mi = ui->balanceCurrent->indexAt(pos);
+    if (!mi.isValid()) return;
+    auto model = mi.model();
+    if (!model) return;
+
+    QMenu m;
+
+    auto a = m.addAction(tr("Copy Value"));
+    connect(a, &QAction::triggered, [&] {
+        QModelIndex mi2 = model->index(mi.row(), mi.column());
+        QApplication::clipboard()->setText(
+            mi2.data(Qt::DisplayRole).toString()
+        );
+    });
+    a = m.addAction(tr("Copy All Rows"));
+    connect(a, &QAction::triggered, [&] {
+        QString text;
+        for(int r=0; r<model->rowCount(); r++) {
+            for(int c=0; c<model->columnCount(); c++) {
+                if (c>0) text += "\t";
+                QModelIndex mi2 = model->index(r, c);
+                text += mi2.data(Qt::DisplayRole).toString();
+            }
+            text += "\n";
+        }
+        QApplication::clipboard()->setText(text);
+    });
+    m.exec(ui->balanceCurrent->viewport()->mapToGlobal(pos));
+}
+
+void BlockchainPage::openBalanceMenu2(const QPoint & pos)
+{
+    QModelIndex mi = ui->balanceValues->indexAt(pos);
+    if (!mi.isValid()) return;
+    auto model = mi.model();
+    if (!model) return;
+
+    QMenu m;
+
+    auto a = m.addAction(tr("Copy Value"));
+    connect(a, &QAction::triggered, [&] {
+        QModelIndex mi2 = model->index(mi.row(), mi.column());
+        QApplication::clipboard()->setText(
+            mi2.data(Qt::DisplayRole).toString()
+        );
+    });
+    a = m.addAction(tr("Copy All Rows"));
+    connect(a, &QAction::triggered, [&] {
+        QString text;
+        for(int r=0; r<model->rowCount(); r++) {
+            for(int c=0; c<model->columnCount(); c++) {
+                if (c>0) text += "\t";
+                QModelIndex mi2 = model->index(r, c);
+                text += mi2.data(Qt::DisplayRole).toString();
+            }
+            text += "\n";
+        }
+        QApplication::clipboard()->setText(text);
+    });
+    m.exec(ui->balanceValues->viewport()->mapToGlobal(pos));
+}
+
+void BlockchainPage::openUnspentMenu(const QPoint & pos)
+{
+    QModelIndex mi = ui->utxoValues->indexAt(pos);
+    if (!mi.isValid()) return;
+    auto model = mi.model();
+    if (!model) return;
+
+    QMenu m;
+
+    auto a = m.addAction(tr("Copy Value"));
+    connect(a, &QAction::triggered, [&] {
+        QModelIndex mi2 = model->index(mi.row(), mi.column());
+        QApplication::clipboard()->setText(
+            mi2.data(Qt::DisplayRole).toString()
+        );
+    });
+    a = m.addAction(tr("Copy All Rows"));
+    connect(a, &QAction::triggered, [&] {
+        QString text;
+        for(int r=0; r<model->rowCount(); r++) {
+            for(int c=0; c<model->columnCount(); c++) {
+                if (c>0) text += "\t";
+                QModelIndex mi2 = model->index(r, c);
+                text += mi2.data(Qt::DisplayRole).toString();
+            }
+            text += "\n";
+        }
+        QApplication::clipboard()->setText(text);
+    });
+    m.exec(ui->utxoValues->viewport()->mapToGlobal(pos));
 }
 
 bool BlockchainPageBlockEvents::eventFilter(QObject *obj, QEvent *event)
@@ -428,58 +696,123 @@ bool BlockchainPageBlockEvents::eventFilter(QObject *obj, QEvent *event)
     return QObject::eventFilter(obj, event);
 }
 
-static QString scriptToAddress(const CScript& scriptPubKey,
-                               bool& is_notary,
-                               bool show_alias =true) {
-    is_notary = false;
-    int nRequired;
-    txnouttype type;
-    vector<CTxDestination> addresses;
-    if (ExtractDestinations(scriptPubKey, type, addresses, nRequired)) {
-        std::string str_addr_all;
-        bool none = true;
-        for(const CTxDestination& addr : addresses) {
-            std::string str_addr = CBitcoinAddress(addr).ToString();
-            if (show_alias) {
-                if (str_addr == "bNyZrPLQAMPvYedrVLDcBSd8fbLdNgnRPz") {
-                    str_addr = "peginflate";
-                }
-                else if (str_addr == "bNyZrP2SbrV6v5HqeBoXZXZDE2e4fe6STo") {
-                    str_addr = "pegdeflate";
-                }
-                else if (str_addr == "bNyZrPeFFNP6GFJZCkE82DDN7JC4K5Vrkk") {
-                    str_addr = "pegnochange";
-                }
-            }
-            if (!str_addr_all.empty())
-                str_addr_all += "\n";
-            str_addr_all += str_addr;
-            none = false;
+void BlockchainPage::openTxFromBalance(QTreeWidgetItem * item,int)
+{
+    uint256 txhash = item->data(0, BlockchainModel::HashRole).value<uint256>();
+    CTxDB txdb("r");
+    CTxIndex txindex;
+    txdb.ReadTxIndex(txhash, txindex);
+    uint nTxNum = 0;
+    uint256 blockhash;
+    txindex.GetHeightInMainChain(&nTxNum, txhash, &blockhash);
+    showTxPage();
+    txDetails->openTx(blockhash, nTxNum);
+}
+
+void BlockchainPage::openTxFromUnspent(QTreeWidgetItem * item,int)
+{
+    uint256 txhash = item->data(0, BlockchainModel::HashRole).value<uint256>();
+    CTxDB txdb("r");
+    CTxIndex txindex;
+    txdb.ReadTxIndex(txhash, txindex);
+    uint nTxNum = 0;
+    uint256 blockhash;
+    txindex.GetHeightInMainChain(&nTxNum, txhash, &blockhash);
+    showTxPage();
+    txDetails->openTx(blockhash, nTxNum);
+}
+
+void BlockchainPage::openTxFromInput()
+{
+    // as height-index
+    if (ui->lineTx->text().contains("-")) {
+        auto args = ui->lineTx->text().split("-");
+        bool ok = false;
+        int blockNum = args.front().toInt(&ok);
+        if (ok) {
+            uint txidx = args.back().toUInt();
+            int n = ui->blockchainView->model()->rowCount();
+            int r = n-blockNum;
+            if (r<0 || r>=n) return;
+            auto mi = ui->blockchainView->model()->index(r, 0);
+            auto bhash = mi.data(BlockchainModel::HashRole).value<uint256>();
+            showTxPage();
+            txDetails->openTx(bhash, txidx);
         }
-        if (!none)
-            return QString::fromStdString(str_addr_all);
+        return;
     }
-    const CScript& script1 = scriptPubKey;
-
-    opcodetype opcode1;
-    vector<unsigned char> vch1;
-    CScript::const_iterator pc1 = script1.begin();
-    if (!script1.GetOp(pc1, opcode1, vch1))
-        return QString();
-
-    if (opcode1 == OP_RETURN && script1.size()>1) {
-        is_notary = true;
-        QString left_bytes;
-        unsigned long len_bytes = script1[1];
-        if (len_bytes > script1.size()-2)
-            len_bytes = script1.size()-2;
-        for(unsigned int i=0; i< len_bytes; i++) {
-            left_bytes += char(script1[i+2]);
+    // consider it as hash
+    uint nTxNum = 0;
+    uint256 blockhash;
+    uint256 txhash(ui->lineTx->text().toStdString());
+    {
+        LOCK(cs_main);
+        CTxDB txdb("r");
+        CTxIndex txindex;
+        if (!txdb.ReadTxIndex(txhash, txindex)) {
+            showTxPage();
+            txDetails->showNotFound();
+            return;
         }
-        return left_bytes;
+        txindex.GetHeightInMainChain(&nTxNum, txhash, &blockhash);
     }
+    showTxPage();
+    txDetails->openTx(blockhash, nTxNum);
+}
 
-    return QString();
+void BlockchainPage::openTx(QTreeWidgetItem * item, int column)
+{
+    Q_UNUSED(column);
+    if (item->text(0).startsWith("tx")) { // open from block page
+        bool tx_idx_ok = false;
+        uint tx_idx = item->text(0).mid(2).toUInt(&tx_idx_ok);
+        if (!tx_idx_ok)
+            return;
+
+        showTxPage();
+        txDetails->openTx(currentBlock, tx_idx);
+    }
+}
+
+bool BlockchainPageTxEvents::eventFilter(QObject *obj, QEvent *event)
+{
+    if (event->type() == QEvent::KeyRelease) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->matches(QKeySequence::Copy)) {
+            QModelIndex mi = treeWidget->currentIndex();
+            if (!mi.isValid()) return true;
+            auto model = mi.model();
+            if (!model) return true;
+            QModelIndex mi2 = model->index(mi.row(), 1 /*value column*/);
+            QApplication::clipboard()->setText(
+                mi2.data(Qt::DisplayRole).toString()
+            );
+            return true;
+        }
+    }
+    return QObject::eventFilter(obj, event);
+}
+
+void BlockchainPage::setClientModel(ClientModel *model)
+{
+    if(model) {
+        connect(model, SIGNAL(connectionsChanged(const CNodeShortStats &)), 
+                this, SLOT(updateConnections(const CNodeShortStats &)));
+        updateConnections(model->getConnections());
+    }
+}
+
+void BlockchainPage::updateConnections(const CNodeShortStats & stats)
+{
+    ui->netNodes->clear();
+    for(const CNodeShortStat & node : stats) {
+        auto twi = new QTreeWidgetItem;
+        twi->setText(0, QString::fromStdString(node.addrName));
+        twi->setText(1, QString::number(node.nVersion));
+        twi->setText(2, QString::fromStdString(node.strSubVer));
+        twi->setText(3, QString::number(node.nStartingHeight));
+        ui->netNodes->addTopLevelItem(twi);
+    }
 }
 
 static QString displayValue(int64_t nValue) {
@@ -506,697 +839,385 @@ static QString displayValueR(int64_t nValue, int len=0) {
     return sValue;
 }
 
-static QString txId(CTxDB& txdb, uint256 txhash) {
-    QString txid;
-    CTxIndex txindex;
-    txdb.ReadTxIndex(txhash, txindex);
-    uint nTxNum = 0;
-    int nHeight = txindex.GetHeightInMainChain(&nTxNum, txhash);
-    if (nHeight >0) {
-        txid = QString("%1-%2").arg(nHeight).arg(nTxNum);
+static QString extractAddress(const CTxOut & txout) {
+    QString fromAddr;
+    int nRequired;
+    txnouttype type;
+    vector<CTxDestination> addresses;
+    if (ExtractDestinations(txout.scriptPubKey, type, addresses, nRequired)) {
+        if (addresses.size()==1) {
+            fromAddr = QString::fromStdString(CBitcoinAddress(addresses.front()).ToString());
+        }
+        else if (addresses.size()>1) {
+            fromAddr = QString("multisig").rightJustified(34);
+        }
     }
-    return txid;
+    return fromAddr;
 }
 
-void BlockchainPage::openTxFromInput()
+void BlockchainPage::updateMempool()
 {
-    // as height-index
-    if (ui->lineTx->text().contains("-")) {
-        auto args = ui->lineTx->text().split("-");
-        bool ok = false;
-        int blockNum = args.front().toInt(&ok);
-        if (ok) {
-            uint txidx = args.back().toUInt();
-            int n = ui->blockchainView->model()->rowCount();
-            int r = n-blockNum;
-            if (r<0 || r>=n) return;
-            auto mi = ui->blockchainView->model()->index(r, 0);
-            auto bhash = mi.data(BlockchainModel::HashRole).value<uint256>();
-            openTx(bhash, txidx);
-        }
-        return;
-    }
-    // consider it as hash
-    uint nTxNum = 0;
-    uint256 blockhash;
-    uint256 txhash(ui->lineTx->text().toStdString());
+    set<int> removeIndexes;
+    set<uint256> oldTxhashes;
+    set<uint256> newTxhashes;
+    set<uint256> insertTxhashes;
     {
-        LOCK(cs_main);
-        CTxDB txdb("r");
-        CTxIndex txindex;
-        txdb.ReadTxIndex(txhash, txindex);
-        txindex.GetHeightInMainChain(&nTxNum, txhash, &blockhash);
-    }
-    openTx(blockhash, nTxNum);
-}
-
-void BlockchainPage::openTx(QTreeWidgetItem * item, int column)
-{
-    if (item->text(0).startsWith("tx")) { // open from block page
-        bool tx_idx_ok = false;
-        uint tx_idx = item->text(0).mid(2).toUInt(&tx_idx_ok);
-        if (!tx_idx_ok)
-            return;
-
-        openTx(currentBlock, tx_idx);
-    }
-
-    else if ((sender() == ui->txInputs || sender() == ui->txOutputs) && column == 1) {
-        uint256 txhash = item->data(1, BlockchainModel::HashRole).value<uint256>();
-        CTxDB txdb("r");
-        CTxIndex txindex;
-        txdb.ReadTxIndex(txhash, txindex);
-        uint nTxNum = 0;
-        uint256 blockhash;
-        txindex.GetHeightInMainChain(&nTxNum, txhash, &blockhash);
-        openTx(blockhash, nTxNum);
-    }
-}
-
-static bool calculateFeesFractions(CBlockIndex* pblockindex,
-                                   CBlock& block,
-                                   int64_t& nFeesValue)
-{
-    MapPrevTx mapInputs;
-    map<uint256, CTxIndex> mapUnused;
-
-    for (CTransaction & tx : block.vtx) {
-
-        if (tx.IsCoinBase()) continue;
-        if (tx.IsCoinStake()) continue;
-
-        uint256 hash = tx.GetHash();
-
-        CTxDB txdb("r");
-        if (!txdb.ContainsTx(hash))
-            return false;
-
-        bool fInvalid = false;
-        tx.FetchInputs(txdb, mapUnused, false, false, mapInputs, fInvalid);
-
-        int64_t nTxValueIn = tx.GetValueIn(mapInputs);
-        int64_t nTxValueOut = tx.GetValueOut();
-        nFeesValue += nTxValueIn - nTxValueOut;
-    }
-
-    return true;
-}
-
-void BlockchainPage::openTx(uint256 blockhash, uint txidx)
-{
-    LOCK(cs_main);
-    if (mapBlockIndex.find(blockhash) == mapBlockIndex.end())
-        return;
-    CBlockIndex* pblockindex = mapBlockIndex[blockhash];
-    if (!pblockindex)
-        return;
-
-    CBlock block;
-    block.ReadFromDisk(pblockindex, true);
-    if (txidx >= block.vtx.size())
-        return;
-
-    CTransaction & tx = block.vtx[txidx];
-    uint256 hash = tx.GetHash();
-    QString thash = QString::fromStdString(hash.ToString());
-    QString sheight = QString("%1-%2").arg(pblockindex->nHeight).arg(txidx);
-
-    CTxDB txdb("r");
-    if (!txdb.ContainsTx(hash))
-        return;
-
-    showTxPage();
-    ui->txValues->clear();
-    auto topItem = new QTreeWidgetItem(QStringList({"Height",sheight}));
-    QVariant vhash;
-    vhash.setValue(hash);
-    topItem->setData(0, BlockchainModel::HashRole, vhash);
-    ui->txValues->addTopLevelItem(topItem);
-    ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Datetime",QString::fromStdString(DateTimeStrFormat(pblockindex->GetBlockTime()))})));
-    ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Hash",thash})));
-
-    QString txtype = tr("Transaction");
-    if (tx.IsCoinBase()) txtype = tr("CoinBase");
-    if (tx.IsCoinStake()) txtype = tr("CoinStake");
-    ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Type",txtype})));
-
-    // logic
-
-    MapPrevTx mapInputs;
-    map<uint256, CTxIndex> mapUnused;
-    int64_t nFeesValue = 0;
-    bool fInvalid = false;
-    tx.FetchInputs(txdb, mapUnused, false, false, mapInputs, fInvalid);
-
-    int64_t nReserveIn = 0;
-    int64_t nLiquidityIn = 0;
-
-    // gui
-
-    ui->txInputs->clear();
-    QSet<QString> sAddresses;
-    size_t n_vin = tx.vin.size();
-    if (tx.IsCoinBase()) n_vin = 0;
-    int64_t nValueIn = 0;
-    for (unsigned int i = 0; i < n_vin; i++)
-    {
-        COutPoint prevout = tx.vin[i].prevout;
-        QStringList row;
-        row << QString::number(i); // idx, 0
-
-        QString prev_thash = QString::fromStdString(prevout.hash.ToString());
-        QString prev_txid_hash = prev_thash.left(4)+"..."+prev_thash.right(4);
-        QString prev_txid_height = txId(txdb, prevout.hash);
-        QString prev_txid = prev_txid_height.isEmpty() ? prev_txid_hash : prev_txid_height;
-
-        row << QString("%1:%2").arg(prev_txid).arg(prevout.n); // tx, 1
-
-        int64_t nValue = 0;
-        if (mapInputs.find(prevout.hash) != mapInputs.end()) {
-            CTransaction& txPrev = mapInputs[prevout.hash].second;
-            if (prevout.n < txPrev.vout.size()) {
-                bool is_notary = false;
-                auto addr = scriptToAddress(txPrev.vout[prevout.n].scriptPubKey, is_notary);
-                if (addr.isEmpty())
-                    row << "N/A"; // address, 2
-                else {
-                    row << addr;
-                    sAddresses.insert(addr);
-                }
-
-                nValue = txPrev.vout[prevout.n].nValue;
-                nValueIn += nValue;
-                row << displayValue(txPrev.vout[prevout.n].nValue);
-            }
-            else {
-                row << "N/A"; // address, 2
-                row << "none"; // value, 3
-            }
-        }
-        else {
-            row << "N/A"; // address
-            row << "none"; // value
-        }
-
-        auto input = new QTreeWidgetItem(row);
+        LOCK(mempool.cs);
+        for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); mi != mempool.mapTx.end(); ++mi)
         {
-            QVariant vhash;
-            vhash.setValue(prevout.hash);
-            input->setData(1, BlockchainModel::HashRole, vhash);
-            input->setData(1, BlockchainModel::OutNumRole, prevout.n);
-        }
-        QVariant vFractions;
-        input->setData(4, BlockchainModel::FractionsRole, vFractions);
-        input->setData(4, BlockchainModel::PegSupplyRole, 0);
-        input->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-        ui->txInputs->addTopLevelItem(input);
-    }
-
-    if (tx.IsCoinStake()) {
-        uint64_t nCoinAge = 0;
-        if (!tx.GetCoinAge(txdb, pblockindex->pprev, nCoinAge)) {
-            //something went wrong
-        }
-        int64_t nCalculatedStakeReward = GetProofOfStakeReward(pblockindex->pprev, nCoinAge, 0 /*fees*/);
-
-        QStringList rowMined;
-        rowMined << "Mined"; // idx, 0
-        rowMined << "";      // tx, 1
-        rowMined << "N/A";   // address, 2
-        rowMined << displayValue(nCalculatedStakeReward);
-
-        auto inputMined = new QTreeWidgetItem(rowMined);
-        QVariant vfractions;
-        inputMined->setData(4, BlockchainModel::FractionsRole, vfractions);
-        inputMined->setData(4, BlockchainModel::PegSupplyRole, 0);
-        inputMined->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-        ui->txInputs->addTopLevelItem(inputMined);
-
-        // need to collect all fees fractions from all tx in the block
-        if (!calculateFeesFractions(pblockindex, block, nFeesValue)) {
-            // peg violation?
-        }
-
-        QStringList rowFees;
-        rowFees << "Fees";  // idx, 0
-        rowFees << "";      // tx, 1
-        rowFees << "N/A";   // address, 2
-        rowFees << displayValue(nFeesValue);
-
-        auto inputFees = new QTreeWidgetItem(rowFees);
-        inputFees->setData(4, BlockchainModel::FractionsRole, vfractions);
-        inputFees->setData(4, BlockchainModel::PegSupplyRole, 0);
-        inputFees->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-        ui->txInputs->addTopLevelItem(inputFees);
-    }
-
-    CTxIndex txindex;
-    txdb.ReadTxIndex(hash, txindex);
-
-    ui->txOutputs->clear();
-    size_t n_vout = tx.vout.size();
-    if (tx.IsCoinBase()) n_vout = 0;
-    int64_t nValueOut = 0;
-    int64_t nLiquidityOut = 0;
-    for (unsigned int i = 0; i < n_vout; i++)
-    {
-        QStringList row;
-        row << QString::number(i); // 0, idx
-
-        bool hasSpend = false;
-        QString titleSpend;
-        uint256 next_hash;
-        uint next_outnum = 0;
-
-        if (i < txindex.vSpent.size()) {
-            CDiskTxPos & txpos = txindex.vSpent[i];
-            CTransaction txSpend;
-            if (txSpend.ReadFromDisk(txpos)) {
-                int vin_idx =0;
-                for(const CTxIn &txin : txSpend.vin) {
-                    if (txin.prevout.hash == hash && txin.prevout.n == i) {
-                        next_hash = txSpend.GetHash();
-                        next_outnum = i;
-
-                        QString next_thash = QString::fromStdString(next_hash.ToString());
-                        QString next_txid_hash = next_thash.left(4)+"..."+next_thash.right(4);
-                        QString next_txid_height = txId(txdb, next_hash);
-                        QString next_txid = next_txid_height.isEmpty() ? next_txid_hash : next_txid_height;
-
-                        row << QString("%1:%2").arg(next_txid).arg(vin_idx); // 1, spend
-                        titleSpend = QString("%1:%2").arg(next_thash).arg(vin_idx);
-                        hasSpend = true;
-                    }
-                    vin_idx++;
-                }
-            }
-        }
-
-        bool is_notary = false;
-        auto addr = scriptToAddress(tx.vout[i].scriptPubKey, is_notary);
-
-        if (!hasSpend) {
-            if (is_notary) {
-                row << "Notary/Burn"; // 1, spend
-            }
-            else row << ""; // 1, spend
-        }
-
-        if (addr.isEmpty())
-            row << "N/A"; // 2, address
-        else row << addr;
-
-        nValueOut += tx.vout[i].nValue;
-        row << displayValue(tx.vout[i].nValue); // 3, value
-
-        bool fIndicateFrozen = false;
-        auto output = new QTreeWidgetItem(row);
-        if (hasSpend) {
-            QVariant vhash;
-            vhash.setValue(next_hash);
-            output->setData(1, BlockchainModel::HashRole, vhash);
-            output->setData(1, BlockchainModel::OutNumRole, next_outnum);
-        }
-        QVariant vFractions;
-        output->setData(4, BlockchainModel::HashRole, titleSpend);
-        output->setData(4, BlockchainModel::FractionsRole, vFractions);
-        output->setData(4, BlockchainModel::PegSupplyRole, 0);
-        output->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-        if (!fIndicateFrozen && sAddresses.contains(addr)) {
-            output->setData(3, Qt::DecorationPropertyRole, pmChange);
-        }
-        ui->txOutputs->addTopLevelItem(output);
-    }
-
-    int nValueMaxLen = qMax(displayValue(nValueIn).length(),
-                            qMax(displayValue(nValueOut).length(),
-                                 qMax(displayValue(nReserveIn).length(),
-                                      qMax(displayValue(nLiquidityIn).length(),
-                                           displayValue(nLiquidityOut).length()))));
-    auto sValueIn = displayValueR(nValueIn, nValueMaxLen);
-    auto sValueOut = displayValueR(nValueOut, nValueMaxLen);
-
-    ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Value In",sValueIn})));
-    ui->txValues->addTopLevelItem(new QTreeWidgetItem(QStringList({"Value Out",sValueOut})));
-
-    if (!tx.IsCoinBase() && !tx.IsCoinStake() && nValueOut < nValueIn) {
-        QStringList row;
-        row << "Fee";
-        row << ""; // spent
-        row << ""; // address (todo)
-        row << displayValue(nValueIn - nValueOut);
-        auto outputFees = new QTreeWidgetItem(row);
-        QVariant vfractions;
-        {
-            outputFees->setData(4, BlockchainModel::FractionsRole, vfractions);
-            outputFees->setData(4, BlockchainModel::PegSupplyRole, 0);
-        }
-        outputFees->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-        ui->txOutputs->addTopLevelItem(outputFees);
-    }
-}
-
-void BlockchainPage::openTxMenu(const QPoint & pos)
-{
-    QModelIndex mi = ui->txValues->indexAt(pos);
-    if (!mi.isValid()) return;
-    auto model = mi.model();
-    if (!model) return;
-
-    QMenu m;
-
-    auto a = m.addAction(tr("Copy Value"));
-    connect(a, &QAction::triggered, [&] {
-        QModelIndex mi2 = model->index(mi.row(), 1 /*value column*/);
-        QApplication::clipboard()->setText(
-            mi2.data(Qt::DisplayRole).toString()
-        );
-    });
-    a = m.addAction(tr("Copy All Rows"));
-    connect(a, &QAction::triggered, [&] {
-        QString text;
-        for(int r=0; r<model->rowCount(); r++) {
-            for(int c=0; c<model->columnCount(); c++) {
-                if (c>0) text += "\t";
-                QModelIndex mi2 = model->index(r, c);
-                text += mi2.data(Qt::DisplayRole).toString();
-            }
-            text += "\n";
-        }
-        QApplication::clipboard()->setText(text);
-    });
-    a = m.addAction(tr("Copy Transaction Info (json)"));
-    connect(a, &QAction::triggered, [&] {
-        QModelIndex mi2 = model->index(0, 0); // topItem
-        auto hash = mi2.data(BlockchainModel::HashRole).value<uint256>();
-
-        CTransaction tx;
-        uint256 hashBlock = 0;
-        if (!GetTransaction(hash, tx, hashBlock))
-            return;
-
-        json_spirit::Object result;
-        TxToJSON(tx, hashBlock, result);
-        json_spirit::Value vresult = result;
-        string str = json_spirit::write_string(vresult, true);
-
-        QApplication::clipboard()->setText(
-            QString::fromStdString(str)
-        );
-    });
-    m.exec(ui->txValues->viewport()->mapToGlobal(pos));
-}
-
-bool BlockchainPageTxEvents::eventFilter(QObject *obj, QEvent *event)
-{
-    if (event->type() == QEvent::KeyRelease) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->matches(QKeySequence::Copy)) {
-            QModelIndex mi = treeWidget->currentIndex();
-            if (!mi.isValid()) return true;
-            auto model = mi.model();
-            if (!model) return true;
-            QModelIndex mi2 = model->index(mi.row(), 1 /*value column*/);
-            QApplication::clipboard()->setText(
-                mi2.data(Qt::DisplayRole).toString()
-            );
-            return true;
+            newTxhashes.insert((*mi).first);
         }
     }
-    return QObject::eventFilter(obj, event);
-}
-
-void BlockchainPage::openFractions(QTreeWidgetItem * item, int column)
-{
-    if (column != 4) // only fractions column
-        return;
-
-    return; // tmp
+    for(int i =0; i< ui->mempoolView->topLevelItemCount(); i++) {
+        auto item = ui->mempoolView->topLevelItem(i);
+        auto oldTxhash = item->data(0, Qt::UserRole).value<uint256>();
+        if (!newTxhashes.count(oldTxhash)) {
+            removeIndexes.insert(i);
+        } else {
+            oldTxhashes.insert(oldTxhash);
+        }
+    }
+    for (set<int>::reverse_iterator rit = removeIndexes.rbegin(); rit != removeIndexes.rend(); rit++) {
+        auto item = ui->mempoolView->takeTopLevelItem(*rit);
+        if (item) { delete item; }
+    }
+    for (uint256 newTxhash : newTxhashes) {
+        if (oldTxhashes.count(newTxhash)) { continue; }
+        insertTxhashes.insert(newTxhash);
+    }
     
-//    auto dlg = new QDialog(this);
-//    Ui::FractionsDialog ui;
-//    ui.setupUi(dlg);
-//    QwtPlot * fplot = new QwtPlot;
-//    QVBoxLayout *fvbox = new QVBoxLayout;
-//    fvbox->setMargin(0);
-//    fvbox->addWidget(fplot);
-//    ui.chart->setLayout(fvbox);
+    {
+        LOCK(mempool.cs);
+        for (uint256 newTxhash : insertTxhashes) {
+            if (!mempool.mapTx.count(newTxhash)) continue;
+            const auto & tx = mempool.mapTx.at(newTxhash);
+            QStringList txcols;
+            txcols << QString::fromStdString(newTxhash.ToString());
+            auto txitem = new QTreeWidgetItem(ui->mempoolView, txcols);
+            QFont f = txitem->font(0);
+            f.setBold(true);
+            txitem->setFont(0, f);
+            ui->mempoolView->expandItem(txitem);
+            
+            size_t nVin = tx.vin.size();
+            size_t nVout = tx.vout.size();
+            
+            int nAlignInpHigh = 0;
+            for(size_t i=0; i< nVin; i++)
+            {
+                const COutPoint & prevout = tx.vin[i].prevout;
+                auto fkey = uint320(prevout.hash, prevout.n);
+                
+                if (!mempool.mapPrevOuts.count(newTxhash)) continue;
+                if (!mempool.mapPrevOuts.at(newTxhash).count(fkey)) continue;
 
-//    QFont font = GUIUtil::bitcoinAddressFont();
-//    qreal pt = font.pointSizeF()*0.8;
-//    if (pt != .0) {
-//        font.setPointSizeF(pt);
-//    } else {
-//        int px = font.pixelSize()*8/10;
-//        font.setPixelSize(px);
-//    }
-
-//    QString hstyle = R"(
-//        QHeaderView::section {
-//            background-color: rgb(204,203,227);
-//            color: rgb(64,64,64);
-//            padding-left: 4px;
-//            border: 0px solid #6c6c6c;
-//            border-right: 1px solid #6c6c6c;
-//            border-bottom: 1px solid #6c6c6c;
-//            min-height: 16px;
-//            text-align: left;
-//        }
-//    )";
-//    ui.fractions->setStyleSheet(hstyle);
-//    ui.fractions->setFont(font);
-//    ui.fractions->header()->setFont(font);
-//    ui.fractions->header()->resizeSection(0 /*n*/, 50);
-//    ui.fractions->header()->resizeSection(1 /*value*/, 160);
-
-//    ui.fractions->setContextMenuPolicy(Qt::CustomContextMenu);
-//    //ui.fractions->installEventFilter(new FractionsDialogEvents(ui.fractions, this));
-//    connect(ui.fractions, SIGNAL(customContextMenuRequested(const QPoint &)),
-//            this, SLOT(openFractionsMenu(const QPoint &)));
-
-//    auto txhash = item->data(4, BlockchainModel::HashRole).toString();
-//    auto supply = item->data(4, BlockchainModel::PegSupplyRole).toInt();
-//    auto vfractions = item->data(4, BlockchainModel::FractionsRole);
-//    auto fractions = vfractions.value<CFractions>();
-//    auto fractions_std = fractions.Std();
-
-////    int64_t fdelta[CPegFractions::PEG_SIZE];
-////    int64_t fundelta[CPegFractions::PEG_SIZE];
-////    fractions_std.ToDeltas(fdelta);
-////    CPegFractions fd;
-////    fd.FromDeltas(fdelta);
-
-//    unsigned long len_test = 0;
-//    CDataStream fout_test(SER_DISK, CLIENT_VERSION);
-//    fractions.Pack(fout_test, &len_test);
-//    ui.packedLabel->setText(tr("Packed: %1 bytes").arg(len_test));
-//    ui.valueLabel->setText(tr("Value: %1").arg(displayValue(fractions.Total())));
-//    ui.reserveLabel->setText(tr("Reserve: %1").arg(displayValue(fractions.Low(supply))));
-//    ui.liquidityLabel->setText(tr("Liquidity: %1").arg(displayValue(fractions.High(supply))));
-
-//    qreal xs_reserve[PEG_SIZE*2];
-//    qreal ys_reserve[PEG_SIZE*2];
-//    qreal xs_liquidity[PEG_SIZE*2];
-//    qreal ys_liquidity[PEG_SIZE*2];
-
-//    for (int i=0; i<PEG_SIZE; i++) {
-//        QStringList row;
-//        row << QString::number(i) << displayValue(fractions_std.f[i]); // << QString::number(fdelta[i]) << QString::number(fd.f[i]);
-//        auto row_item = new QTreeWidgetItem(row);
-//        row_item->setData(0, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-//        row_item->setData(1, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
-//        ui.fractions->addTopLevelItem(row_item);
-
-//        xs_reserve[i*2] = i;
-//        ys_reserve[i*2] = i < supply ? qreal(fractions_std.f[i]) : 0;
-//        xs_reserve[i*2+1] = i+1;
-//        ys_reserve[i*2+1] = ys_reserve[i*2];
-
-//        xs_liquidity[i*2] = i;
-//        ys_liquidity[i*2] = i >= supply ? qreal(fractions_std.f[i]) : 0;
-//        xs_liquidity[i*2+1] = i+1;
-//        ys_liquidity[i*2+1] = ys_liquidity[i*2];
-//    }
-
-//    QPen nopen(Qt::NoPen);
-
-//    auto curve_reserve = new QwtPlotCurve;
-//    curve_reserve->setPen(nopen);
-//    curve_reserve->setBrush(QColor("#c06a15"));
-//    curve_reserve->setSamples(xs_reserve, ys_reserve, supply*2);
-//    curve_reserve->setRenderHint(QwtPlotItem::RenderAntialiased);
-//    curve_reserve->attach(fplot);
-
-//    auto curve_liquidity = new QwtPlotCurve;
-//    curve_liquidity->setPen(nopen);
-//    curve_liquidity->setBrush(QColor("#2da5e0"));
-//    curve_liquidity->setSamples(xs_liquidity+supply*2,
-//                                ys_liquidity+supply*2,
-//                                PEG_SIZE*2-supply*2);
-//    curve_liquidity->setRenderHint(QwtPlotItem::RenderAntialiased);
-//    curve_liquidity->attach(fplot);
-
-//    fplot->replot();
-
-//    dlg->setWindowTitle(txhash+" "+tr("fractions"));
-//    dlg->show();
-}
-
-void BlockchainPage::openFractionsMenu(const QPoint & pos)
-{
-    QTreeWidget * table = dynamic_cast<QTreeWidget *>(sender());
-    if (!table) return;
-    QModelIndex mi = table->indexAt(pos);
-    if (!mi.isValid()) return;
-    auto model = mi.model();
-    if (!model) return;
-
-    QMenu m;
-
-    auto a = m.addAction(tr("Copy Value"));
-    connect(a, &QAction::triggered, [&] {
-        QModelIndex mi2 = model->index(mi.row(), 1 /*value column*/);
-        QApplication::clipboard()->setText(
-            mi2.data(Qt::DisplayRole).toString()
-        );
-    });
-    a = m.addAction(tr("Copy All Rows"));
-    connect(a, &QAction::triggered, [&] {
-        QString text;
-        for(int r=0; r<model->rowCount(); r++) {
-            for(int c=0; c<model->columnCount(); c++) {
-                if (c>0) text += "\t";
-                QModelIndex mi2 = model->index(r, c);
-                text += mi2.data(Qt::DisplayRole).toString();
+                const CTxOut & txout = mempool.mapPrevOuts.at(newTxhash).at(fkey);
+                
+                QString text = displayValue(txout.nValue);
+                if (text.length() > nAlignInpHigh)
+                    nAlignInpHigh = text.length();
             }
-            text += "\n";
-        }
-        QApplication::clipboard()->setText(text);
-    });
-    m.exec(table->viewport()->mapToGlobal(pos));
-}
+            
+            for(size_t i=0; i< nVin; i++)
+            {
+                QStringList inpcols;
+                inpcols << QString::fromStdString(tx.vin[i].prevout.ToString());
 
-bool FractionsDialogEvents::eventFilter(QObject *obj, QEvent *event)
-{
-    if (event->type() == QEvent::KeyRelease) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->matches(QKeySequence::Copy)) {
-            QModelIndex mi = treeWidget->currentIndex();
-            if (!mi.isValid()) return true;
-            auto model = mi.model();
-            if (!model) return true;
-            QModelIndex mi2 = model->index(mi.row(), 1 /*value column*/);
-            QApplication::clipboard()->setText(
-                mi2.data(Qt::DisplayRole).toString()
-            );
-            return true;
+                const COutPoint & prevout = tx.vin[i].prevout;
+                auto fkey = uint320(prevout.hash, prevout.n);
+                
+                if (!mempool.mapPrevOuts.count(newTxhash)) continue;
+                if (!mempool.mapPrevOuts.at(newTxhash).count(fkey)) continue;
+                
+                const CTxOut & txout = mempool.mapPrevOuts.at(newTxhash).at(fkey);
+                QString fromAddr = extractAddress(txout);
+                
+                auto inpitem = new QTreeWidgetItem(txitem, inpcols);
+                inpitem->setText(0, fromAddr + " " + displayValueR(txout.nValue, nAlignInpHigh) + " --> ");
+            }
+            
+            size_t nOuts = 0;
+            nAlignInpHigh = 0;
+            for(size_t i=0; i< nVout; i++)
+            {
+                const CTxOut & txout = tx.vout[i];
+                QString toAddr = extractAddress(txout);
+                if (toAddr.isEmpty()) continue;
+                QString text = displayValue(txout.nValue);
+                if (text.length() > nAlignInpHigh)
+                    nAlignInpHigh = text.length();
+                nOuts++;
+            }
+            
+            if (nOuts > nVin) {
+                for(size_t i=nVin; i< nOuts; i++)
+                {
+                    auto inpitem = new QTreeWidgetItem(txitem);
+                    inpitem->setText(0, QString(" ").repeated(34+1+nAlignInpHigh)+" --> ");
+                }
+            }
+            
+            size_t nOut = 0;
+            for(size_t i=0; i< nVout; i++)
+            {
+                const CTxOut & txout = tx.vout[i];
+                QString toAddr = extractAddress(txout);
+                if (toAddr.isEmpty()) continue;
+
+                auto outitem = txitem->child(nOut);
+                QString text = outitem->text(0);
+                
+                text += toAddr + " " + displayValueR(txout.nValue, nAlignInpHigh);
+                outitem->setText(0, text);
+                nOut++;
+            }
         }
     }
-    return QObject::eventFilter(obj, event);
 }
 
-// delegate to draw icon on left side
-
-LeftSideIconItemDelegate::LeftSideIconItemDelegate(QWidget *parent) :
-    QStyledItemDelegate(parent) {}
-LeftSideIconItemDelegate::~LeftSideIconItemDelegate() {}
-
-void LeftSideIconItemDelegate::paint(QPainter* p,
-                                  const QStyleOptionViewItem& o,
-                                  const QModelIndex& index) const
+void BlockchainPage::openBalanceFromInput()
 {
-    QStyledItemDelegate::paint(p, o, index);
-    auto icondata = index.data(Qt::DecorationPropertyRole);
-    if (!icondata.isValid()) return;
-    QPixmap pm = icondata.value<QPixmap>();
-    if (pm.isNull()) return;
-    QRect r = o.rect;
-    //int rside = r.height()-2;
-    QRect pmr = QRect(0,0, 16,16);
-    pmr.moveCenter(QPoint(r.left()+pmr.width()/2, r.center().y()));
-    //p->setOpacity(0.5);
-    p->drawPixmap(pmr, pm);
-    //p->setOpacity(1);
+    QString addr = ui->lineBalanceAddress->text();
+    ui->balanceCurrent->clear();
+    ui->balanceValues->clear();
+    if (addr.length() != 34) return;
+    openBalanceFromTx(addr);
 }
 
-// delegate to draw fractions
-
-FractionsItemDelegate::FractionsItemDelegate(QWidget *parent) :
-    QItemDelegate(parent)
+void BlockchainPage::openBalanceFromTx(QString addr)
 {
+    showBalancePage();
+    if (addr != ui->lineBalanceAddress->text())
+        ui->lineBalanceAddress->setText(addr);
+    
+    bool fPegPruneEnabled = true;
+    {
+        CPegDB pegdb("r");
+        if (!pegdb.ReadPegPruneEnabled(fPegPruneEnabled)) {
+            fPegPruneEnabled = true;
+        }
+    }
+    
+    ui->balanceCurrent->clear();
+    ui->balanceValues->clear();
+    
+    LOCK(cs_main);
+    CTxDB txdb("r");
+    vector<CAddressBalance> records;
+    bool ok = txdb.ReadAddressBalanceRecords(addr.toStdString(), records);
+    if (!ok) return;
+    int nIdx = records.size();
+    bool isLatestRecord = true;
+    for (const auto & record : records) {
+        if (isLatestRecord) {
+            CFractions pegbalance;
+            txdb.ReadPegBalance(addr.toStdString(), pegbalance);
+            int64_t nLiquid = pegbalance.High(pindexBest->nPegSupplyIndex);
+            int64_t nReserve = pegbalance.Low(pindexBest->nPegSupplyIndex);
+            int nValueMaxLen = qMax(displayValue(record.nBalance).length(),
+                                    qMax(displayValue(nLiquid).length(),
+                                         qMax(displayValue(nReserve).length(),
+                                              displayValue(record.nFrozen).length())));
+            
+            ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Total",displayValueR(record.nBalance, nValueMaxLen)})));
+            ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Liquid",displayValueR(nLiquid, nValueMaxLen)})));
+            ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Reserve",displayValueR(nReserve, nValueMaxLen)})));
+            ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Frozen",displayValueR(record.nFrozen, nValueMaxLen)})));
+            isLatestRecord = false;
+        }
+        auto item = new QTreeWidgetItem;
+        QVariant vhash;
+        vhash.setValue(record.txhash);
+        item->setData(0, BlockchainModel::HashRole, vhash);
+        item->setText(0, QString::number(nIdx));
+        item->setData(2, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        item->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        item->setData(4, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        item->setData(5, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        if (record.nIndex == 1) { // stake
+            item->setText(1, QString("%1-%2").arg(record.nHeight).arg(record.nIndex));
+            if (record.nCredit == 0) {
+                item->setData(2, Qt::TextColorRole, QColor("#808080"));
+                item->setText(2, "(stake)");
+            } else {
+                item->setText(2, "-"+displayValue(record.nCredit));
+            }
+            if (record.nDebit == 0) {
+                item->setData(3, Qt::TextColorRole, QColor("#808080"));
+                item->setText(3, "(reward moved)");
+            } else {
+                item->setText(3, "+"+displayValue(record.nDebit));
+            }
+        }
+        else if (record.nIndex >=0) {
+            item->setText(1, QString("%1-%2").arg(record.nHeight).arg(record.nIndex));
+            item->setText(2, record.nCredit>0 ? "-"+displayValue(record.nCredit) : QString(""));
+            item->setText(3, record.nDebit >0 ? "+"+displayValue(record.nDebit ) : QString(""));
+        } else {
+            item->setText(1, QString("%1-U").arg(record.nHeight));
+            item->setData(2, Qt::TextColorRole, QColor("#808080"));
+            item->setText(2, QString("(unfreeze)"));
+            item->setData(3, Qt::TextColorRole, QColor("#808080"));
+            item->setText(3, displayValue(record.nDebit));
+        }
+        item->setText(4, displayValue(record.nBalance));
+        item->setData(5, Qt::TextColorRole, QColor("#808080"));
+        if (fPegPruneEnabled && record.nHeight >= uint64_t(nPegStartHeight) && 
+            (uint64_t(nBestHeight)-record.nHeight) > PEG_PRUNE_INTERVAL) {
+            item->setText(5, QString("(pruned)"));
+        } else {
+            item->setText(5, record.nFrozen >0 ? displayValue(record.nFrozen) : QString(""));
+        }
+        item->setText(6, QString::fromStdString(DateTimeStrFormat(record.nTime)));
+        ui->balanceValues->addTopLevelItem(item);
+        nIdx--;
+    }
+    
+    if (isLatestRecord) {
+        int nValueMaxLen = qMax(displayValue(0).length(),
+                                qMax(displayValue(0).length(),
+                                     qMax(displayValue(0).length(),
+                                          displayValue(0).length())));
+        
+        ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Total",displayValueR(0, nValueMaxLen)})));
+        ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Liquid",displayValueR(0, nValueMaxLen)})));
+        ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Reserve",displayValueR(0, nValueMaxLen)})));
+        ui->balanceCurrent->addTopLevelItem(new QTreeWidgetItem(QStringList({"Frozen",displayValueR(0, nValueMaxLen)})));
+        isLatestRecord = false;
+    }
 }
 
-FractionsItemDelegate::~FractionsItemDelegate()
+void BlockchainPage::openUnspentFromBalance(QTreeWidgetItem*,int)
 {
+    QString addr = ui->lineBalanceAddress->text();
+    openUnspentFromAddress(addr);
 }
 
-void FractionsItemDelegate::paint(QPainter* p,
-                                  const QStyleOptionViewItem& o,
-                                  const QModelIndex& index) const
+void BlockchainPage::openUnspentFromInput()
 {
-    return QItemDelegate::paint(p, o, index);
-//    auto vfractions = index.data(BlockchainModel::FractionsRole);
-//    auto fractions = vfractions.value<CFractions>();
-//    auto fractions_std = fractions.Std();
-
-//    int64_t f_max = 0;
-//    for (int i=0; i<PEG_SIZE; i++) {
-//        auto f = fractions_std.f[i];
-//        if (f > f_max) f_max = f;
-//    }
-//    if (f_max == 0)
-//        return; // zero-value fractions
-
-//    auto supply = index.data(BlockchainModel::PegSupplyRole).toInt();
-
-//    QPainterPath path_reserve;
-//    QPainterPath path_liquidity;
-//    QVector<QPointF> points_reserve;
-//    QVector<QPointF> points_liquidity;
-
-//    QRect r = o.rect;
-//    qreal rx = r.x();
-//    qreal ry = r.y();
-//    qreal rw = r.width();
-//    qreal rh = r.height();
-//    qreal w = PEG_SIZE;
-//    qreal h = f_max;
-//    qreal pegx = rx + supply*rw/w;
-
-//    points_reserve.push_back(QPointF(rx,r.bottom()));
-//    for (int i=0; i<supply; i++) {
-//        int64_t f = fractions_std.f[i];
-//        qreal x = rx + qreal(i)*rw/w;
-//        qreal y = ry + rh - qreal(f)*rh/h;
-//        points_reserve.push_back(QPointF(x,y));
-//    }
-//    points_reserve.push_back(QPointF(pegx,r.bottom()));
-
-//    points_liquidity.push_back(QPointF(pegx,r.bottom()));
-//    for (int i=supply; i<PEG_SIZE; i++) {
-//        int64_t f = fractions_std.f[i];
-//        qreal x = rx + qreal(i)*rw/w;
-//        qreal y = ry + rh - qreal(f)*rh/h;
-//        points_liquidity.push_back(QPointF(x,y));
-//    }
-//    points_liquidity.push_back(QPointF(rx+rw,r.bottom()));
-
-//    QPolygonF poly_reserve(points_reserve);
-//    path_reserve.addPolygon(poly_reserve);
-
-//    QPolygonF poly_liquidity(points_liquidity);
-//    path_liquidity.addPolygon(poly_liquidity);
-
-//    p->setRenderHint( QPainter::Antialiasing );
-
-//    p->setBrush( QColor("#c06a15") );
-//    p->setPen( QColor("#c06a15") );
-//    p->drawPath( path_reserve );
-
-//    p->setBrush( QColor("#2da5e0") );
-//    p->setPen( QColor("#2da5e0") );
-//    p->drawPath( path_liquidity );
-
-//    p->setPen( Qt::red );
-//    p->drawLine(QPointF(pegx, ry), QPointF(pegx, ry+rh));
+    QString addr = ui->lineUtxoAddress->text();
+    openUnspentFromAddress(addr);
 }
+
+void BlockchainPage::openUnspentFromAddress(QString addr)
+{
+    showUnspentPage();
+    if (addr != ui->lineUtxoAddress->text())
+        ui->lineUtxoAddress->setText(addr);
+    
+    ui->utxoValues->clear();
+    
+    LOCK(cs_main);
+    CTxDB txdb("r");
+    CPegDB pegdb("r");
+
+    auto totalitem = new QTreeWidgetItem;
+    {
+        totalitem->setText(0, QString("Balance"));
+        QFont f = totalitem->data(0, Qt::FontRole).value<QFont>();
+        f.setBold(true);
+        QVariant vf;
+        vf.setValue(f);
+        totalitem->setData(0, Qt::FontRole, vf);
+        totalitem->setData(2, Qt::FontRole, vf);
+        totalitem->setData(3, Qt::FontRole, vf);
+        totalitem->setData(4, Qt::FontRole, vf);
+        totalitem->setData(2, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        totalitem->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        totalitem->setData(4, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        ui->utxoValues->addTopLevelItem(totalitem);
+    }
+        
+    {
+        
+        int64_t nLiquid = 0;
+        int64_t nReserve = 0;
+        int64_t nBalance = 0;
+        vector<CAddressUnspent> records;
+        bool ok = txdb.ReadAddressUnspent(addr.toStdString(), records);
+        if (ok) {
+            int nIdx = records.size();
+            for (const auto & record : records) {
+                uint320 txoutid(record.txoutid);
+                auto item = new QTreeWidgetItem;
+                QVariant vhash;
+                vhash.setValue(txoutid.b1());
+                item->setData(0, BlockchainModel::HashRole, vhash);
+                item->setText(0, QString::number(nIdx));
+                item->setData(2, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+                item->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+                item->setData(4, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+                item->setText(1, QString("%1-%2:%3").arg(record.nHeight).arg(record.nIndex).arg(txoutid.b2()));
+                CFractions fractions(record.nAmount, CFractions::STD);
+                if (record.nHeight > nPegStartHeight) {
+                    if (pegdb.ReadFractions(txoutid, fractions, true /*must_have*/)) {
+                        int64_t nUnspentLiquid = fractions.High(pindexBest->nPegSupplyIndex);
+                        int64_t nUnspentReserve = fractions.Low(pindexBest->nPegSupplyIndex);
+                        item->setText(2, displayValue(nUnspentLiquid));
+                        item->setText(3, displayValue(nUnspentReserve));
+                        nLiquid += nUnspentLiquid;
+                        nReserve += nUnspentReserve;
+                    }
+                } else {
+                    int64_t nUnspentLiquid = fractions.High(pindexBest->nPegSupplyIndex);
+                    int64_t nUnspentReserve = fractions.Low(pindexBest->nPegSupplyIndex);
+                    item->setText(2, displayValue(nUnspentLiquid));
+                    item->setText(3, displayValue(nUnspentReserve));
+                    nLiquid += nUnspentLiquid;
+                    nReserve += nUnspentReserve;
+                }
+                nBalance += record.nAmount;
+                item->setText(4, displayValue(record.nAmount));
+                ui->utxoValues->addTopLevelItem(item);
+                nIdx--;
+            }
+        }
+        
+        totalitem->setText(2, displayValue(nLiquid));
+        totalitem->setText(3, displayValue(nReserve));
+        totalitem->setText(4, displayValue(nBalance));
+    }
+    
+    auto frozenitem = new QTreeWidgetItem;
+    {
+        frozenitem->setText(0, QString("Frozen"));
+        QFont f = frozenitem->data(0, Qt::FontRole).value<QFont>();
+        f.setBold(true);
+        QVariant vf;
+        vf.setValue(f);
+        frozenitem->setData(0, Qt::FontRole, vf);
+        frozenitem->setData(4, Qt::FontRole, vf);
+        frozenitem->setData(2, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        frozenitem->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        frozenitem->setData(4, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+        ui->utxoValues->addTopLevelItem(frozenitem);
+    }
+    
+    {
+        int64_t nFrozen = 0;
+        
+        vector<CAddressUnspent> records;
+        bool ok = txdb.ReadAddressFrozen(addr.toStdString(), records);
+        if (ok) {
+            int nIdx = records.size();
+            for (const auto & record : records) {
+                uint320 txoutid(record.txoutid);
+                auto item = new QTreeWidgetItem;
+                QVariant vhash;
+                vhash.setValue(txoutid.b1());
+                item->setData(0, BlockchainModel::HashRole, vhash);
+                item->setText(0, "F-"+QString::number(nIdx));
+                item->setData(2, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+                item->setData(3, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+                item->setData(4, Qt::TextAlignmentRole, int(Qt::AlignVCenter | Qt::AlignRight));
+                item->setText(1, QString("%1-%2:%3").arg(record.nHeight).arg(record.nIndex).arg(txoutid.b2()));
+                item->setText(4, displayValue(record.nAmount));
+                nFrozen += record.nAmount;
+                ui->utxoValues->addTopLevelItem(item);
+                nIdx--;
+            }
+        }
+        frozenitem->setText(4, displayValue(nFrozen));
+    }
+}
+

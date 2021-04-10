@@ -23,7 +23,6 @@
 #include <boost/bind.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/foreach.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/shared_ptr.hpp>
@@ -47,7 +46,7 @@ void RPCTypeCheck(const Array& params,
                   bool fAllowNull)
 {
     unsigned int i = 0;
-    BOOST_FOREACH(Value_type t, typesExpected)
+    for(const Value_type& t : typesExpected)
     {
         if (params.size() <= i)
             break;
@@ -67,7 +66,7 @@ void RPCTypeCheck(const Object& o,
                   const map<string, Value_type>& typesExpected,
                   bool fAllowNull)
 {
-    BOOST_FOREACH(const PAIRTYPE(string, Value_type)& t, typesExpected)
+    for(const pair<string, Value_type>& t : typesExpected)
     {
         const Value& v = find_value(o, t.first);
         if (!fAllowNull && v.type() == null_type)
@@ -246,7 +245,16 @@ static const CRPCCommand vRPCCommands[] =
     { "validatepubkey",         &validatepubkey,         true,      false,     false },
     { "verifymessage",          &verifymessage,          false,     false,     false },
     { "gettxout",               &gettxout,               false,     false,     false },
-
+    { "getpeginfo",             &getpeginfo,             true,      false,     false },
+    { "getfractions",           &getfractions,           true,      false,     false },
+    { "getfractionsbase64",     &getfractionsbase64,     true,      false,     false },
+    { "getliquidityrate",       &getliquidityrate,       true,      false,     false },
+    { "validaterawtransaction", &validaterawtransaction, true,      false,     false },
+    { "createbootstrap",        &createbootstrap,        true,      false,     false },
+    { "listunspent",            &listunspent,            false,     false,     false },
+    { "listfrozen",             &listfrozen,             false,     false,     false },
+    { "balance",                &balance,                false,     false,     false },
+  
 #ifdef ENABLE_WALLET
     { "getmininginfo",          &getmininginfo,          true,      false,     false },
     { "getstakinginfo",         &getstakinginfo,         true,      false,     false },
@@ -268,7 +276,6 @@ static const CRPCCommand vRPCCommands[] =
     { "walletlock",             &walletlock,             true,      false,     true },
     { "encryptwallet",          &encryptwallet,          false,     false,     true },
     { "getbalance",             &getbalance,             false,     false,     true },
-    { "move",                   &movecmd,                false,     false,     true },
     { "sendfrom",               &sendfrom,               false,     false,     true },
     { "sendmany",               &sendmany,               false,     false,     true },
     { "addmultisigaddress",     &addmultisigaddress,     false,     false,     true },
@@ -288,7 +295,6 @@ static const CRPCCommand vRPCCommands[] =
     { "importprivkey",          &importprivkey,          false,     false,     true },
     { "importwallet",           &importwallet,           false,     false,     true },
     { "importaddress",          &importaddress,          false,     false,     true },
-    { "listunspent",            &listunspent,            false,     false,     true },
     { "settxfee",               &settxfee,               false,     false,     true },
     { "getsubsidy",             &getsubsidy,             true,      true,      false },
     { "getstakesubsidy",        &getstakesubsidy,        true,      true,      false },
@@ -298,6 +304,25 @@ static const CRPCCommand vRPCCommands[] =
     { "resendtx",               &resendtx,               false,     true,      true },
     { "makekeypair",            &makekeypair,            false,     true,      false },
     { "checkkernel",            &checkkernel,            true,      false,     true },
+#ifdef ENABLE_EXCHANGE
+    { "listdeposits",           &listdeposits,           false,     false,     true },
+    { "registerdeposit",        &registerdeposit,        false,     false,     true },
+    { "updatetxout",            &updatetxout,            false,     false,     true },
+    { "getpeglevel",            &getpeglevel,            false,     false,     true },
+    { "makepeglevel",           &makepeglevel,           false,     false,     true },
+    { "updatepegbalances",      &updatepegbalances,      false,     false,     true },
+    { "movecoins",              &movecoins,              false,     false,     true },
+    { "moveliquid",             &moveliquid,             false,     false,     true },
+    { "movereserve",            &movereserve,            false,     false,     true },
+    { "removecoins",            &removecoins,            false,     false,     true },
+    { "prepareliquidwithdraw",  &prepareliquidwithdraw,  false,     false,     true },
+    { "preparereservewithdraw", &preparereservewithdraw, false,     false,     true },
+    { "checkwithdrawstate",     &checkwithdrawstate,     false,     false,     true },
+    { "accountmaintenance",     &accountmaintenance,     false,     false,     true },
+#endif
+#ifdef ENABLE_FAUCET
+    { "faucet",                 &faucet,                 false,     false,     true },
+#endif
 #endif
 };
 
@@ -360,9 +385,11 @@ bool ClientAllowed(const boost::asio::ip::address& address)
 
     const string strAddress = address.to_string();
     const vector<string>& vAllow = mapMultiArgs["-rpcallowip"];
-    BOOST_FOREACH(string strAllow, vAllow)
-        if (WildcardMatch(strAddress, strAllow))
+    for(const string & strAllow : vAllow) {
+        if (WildcardMatch(strAddress, strAllow)) {
             return true;
+        }
+    }
     return false;
 }
 
@@ -599,8 +626,14 @@ void StartRPCThreads()
     }
 
     rpc_worker_group = new boost::thread_group();
-    for (int i = 0; i < GetArg("-rpcthreads", 4); i++)
-        rpc_worker_group->create_thread(boost::bind(&ioContext::run, rpc_io_service));
+    for (int i = 0; i < GetArg("-rpcthreads", 4); i++) {
+        // at least 256KB for rpc (musl 80KB)
+        boost::thread::attributes rpc_thread_attrs;
+        rpc_thread_attrs.set_stack_size(256*1096); 
+        auto rpc_thread = new boost::thread(rpc_thread_attrs,
+                                     boost::bind(&asio::io_service::run, rpc_io_service));
+        rpc_worker_group->add_thread(rpc_thread);
+    }
 }
 
 void StopRPCThreads()

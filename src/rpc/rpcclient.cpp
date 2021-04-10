@@ -8,6 +8,7 @@
 
 #include "rpcprotocol.h"
 #include "util.h"
+#include "utilstrencodings.h"
 #include "ui_interface.h"
 #include "chainparams.h" // for Params().RPCPort()
 
@@ -18,7 +19,6 @@
 #include <boost/asio/ssl.hpp>
 #include <boost/bind.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/foreach.hpp>
 #include <boost/iostreams/concepts.hpp>
 #include <boost/iostreams/stream.hpp>
 #include <boost/lexical_cast.hpp>
@@ -144,6 +144,15 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "listunspent", 0 },
     { "listunspent", 1 },
     { "listunspent", 2 },
+    { "listunspent", 3 },
+    { "listfrozen", 0 },
+    { "listfrozen", 1 },
+    { "listfrozen", 2 },
+    { "listfrozen", 3 },
+    { "listdeposits", 0 },
+    { "listdeposits", 1 },
+    { "listdeposits", 2 },
+    { "balance", 1 },
     { "getrawtransaction", 1 },
     { "createrawtransaction", 0 },
     { "createrawtransaction", 1 },
@@ -157,16 +166,42 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "submitblock", 1 },
     { "gettxout", 1 },
     { "gettxout", 2 },
+    { "getliquidityrate", 1 },
+    { "getpeglevel", 2 },
+    { "getfractions", 1 },
+    { "makepeglevel", 0 },
+    { "makepeglevel", 1 },
+    { "makepeglevel", 2 },
+    { "makepeglevel", 3 },
+    { "makepeglevel", 4 },
+    { "makepeglevel", 5 },
+    { "movecoins", 0 },
+    { "moveliquid", 0 },
+    { "movereserve", 0 },
+    { "prepareliquidwithdraw", 3 },
+    { "preparereservewithdraw", 3 },
+    { "validaterawtransaction", 1 },
+    { "validaterawtransaction", 2 },
+};
+
+static const CRPCConvertParam vRPCMixedParams[] =
+{
+    { "listunspent", 0 },
+    { "listfrozen", 0 },
 };
 
 class CRPCConvertTable
 {
 private:
+    std::set<std::pair<std::string, int> > mixed;
     std::set<std::pair<std::string, int> > members;
 
 public:
     CRPCConvertTable();
 
+    bool ismixed(const std::string& method, int idx) {
+        return (mixed.count(std::make_pair(method, idx)) > 0);
+    }
     bool convert(const std::string& method, int idx) {
         return (members.count(std::make_pair(method, idx)) > 0);
     }
@@ -174,10 +209,18 @@ public:
 
 CRPCConvertTable::CRPCConvertTable()
 {
-    const unsigned int n_elem =
+    const unsigned int n_elem1 =
+        (sizeof(vRPCMixedParams) / sizeof(vRPCMixedParams[0]));
+
+    for (unsigned int i = 0; i < n_elem1; i++) {
+        mixed.insert(std::make_pair(vRPCMixedParams[i].methodName,
+                                    vRPCMixedParams[i].paramIdx));
+    }
+    
+    const unsigned int n_elem2 =
         (sizeof(vRPCConvertParams) / sizeof(vRPCConvertParams[0]));
 
-    for (unsigned int i = 0; i < n_elem; i++) {
+    for (unsigned int i = 0; i < n_elem2; i++) {
         members.insert(std::make_pair(vRPCConvertParams[i].methodName,
                                       vRPCConvertParams[i].paramIdx));
     }
@@ -193,6 +236,17 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     for (unsigned int idx = 0; idx < strParams.size(); idx++) {
         const std::string& strVal = strParams[idx];
 
+        // if type can be mixed
+        if (rpcCvtTable.ismixed(strMethod, idx)) {
+            Value jVal;
+            if (!read_string(strVal, jVal)) {
+                params.push_back(strVal);
+            } else {
+                params.push_back(jVal);
+            }
+            continue;
+        }
+        
         // insert string value directly
         if (!rpcCvtTable.convert(strMethod, idx)) {
             params.push_back(strVal);

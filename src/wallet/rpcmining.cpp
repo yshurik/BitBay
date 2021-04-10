@@ -73,7 +73,22 @@ Value getstakesubsidy(const Array& params, bool fHelp)
     if (!tx.GetCoinAge(txdb, pindexBest, nCoinAge))
         throw JSONRPCError(RPC_MISC_ERROR, "GetCoinAge failed");
 
-    return (uint64_t)GetProofOfStakeReward(pindexBest, nCoinAge, 0);
+    CTxIndex txindex;
+    CTransaction txPrev;
+    const COutPoint & prevout = tx.vin.front().prevout;
+    if (!txdb.ReadTxIndex(prevout.hash, txindex))
+        throw JSONRPCError(RPC_MISC_ERROR, "ReadTxIndex prev tx failed");
+    if (!txPrev.ReadFromDisk(txindex.pos))
+        throw JSONRPCError(RPC_MISC_ERROR, "ReadFromDisk prev tx failed");
+    
+    CPegDB pegdb("r");
+    auto fkey = uint320(prevout.hash, prevout.n);
+    CFractions fractions(txPrev.vout[prevout.n].nValue, CFractions::VALUE);
+    if (!pegdb.ReadFractions(fkey, fractions)) {
+        throw JSONRPCError(RPC_MISC_ERROR, "pegdb.ReadFractions/Unpack prev tx fractions failed");
+    }
+    
+    return (uint64_t)GetProofOfStakeReward(pindexBest, nCoinAge, 0, fractions);
 }
 
 Value getmininginfo(const Array& params, bool fHelp)
@@ -130,7 +145,12 @@ Value getstakinginfo(const Array& params, bool fHelp)
 
     Object obj;
 
-    obj.push_back(Pair("enabled", GetBoolArg("-staking", true)));
+    bool enabled = false;
+#if !defined(ENABLE_EXCHANGE)
+    enabled = GetBoolArg("-staking", true);
+#endif
+    
+    obj.push_back(Pair("enabled", enabled));
     obj.push_back(Pair("staking", staking));
     obj.push_back(Pair("errors", GetWarnings("statusbar")));
 
@@ -174,7 +194,7 @@ Value checkkernel(const Array& params, bool fHelp)
     int64_t nTime = GetAdjustedTime();
     nTime &= ~STAKE_TIMESTAMP_MASK;
 
-    BOOST_FOREACH(Value& input, inputs)
+    for(Value& input : inputs)
     {
         const Object& o = input.get_obj();
 
@@ -216,7 +236,7 @@ Value checkkernel(const Array& params, bool fHelp)
         return result;
 
     int64_t nFees;
-    auto_ptr<CBlock> pblock(CreateNewBlock(*pMiningKey, true, &nFees));
+    unique_ptr<CBlock> pblock(CreateNewBlock(*pMiningKey, true, &nFees));
 
     pblock->nTime = pblock->vtx[0].nTime = nTime;
 
@@ -254,7 +274,7 @@ Value getworkex(const Array& params, bool fHelp)
 
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;
-    static vector<CBlock*> vNewBlock;
+    static vector<unique_ptr<CBlock>> vNewBlock;
 
     if (params.size() == 0)
     {
@@ -262,7 +282,7 @@ Value getworkex(const Array& params, bool fHelp)
         static unsigned int nTransactionsUpdatedLast;
         static CBlockIndex* pindexPrev;
         static int64_t nStart;
-        static CBlock* pblock;
+        static unique_ptr<CBlock> pblock;
         if (pindexPrev != pindexBest ||
             (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - nStart > 60))
         {
@@ -270,8 +290,6 @@ Value getworkex(const Array& params, bool fHelp)
             {
                 // Deallocate old blocks since they're obsolete now
                 mapNewBlock.clear();
-                BOOST_FOREACH(CBlock* pblock, vNewBlock)
-                    delete pblock;
                 vNewBlock.clear();
             }
             nTransactionsUpdatedLast = mempool.GetTransactionsUpdated();
@@ -282,7 +300,7 @@ Value getworkex(const Array& params, bool fHelp)
             pblock = CreateNewBlock(*pMiningKey);
             if (!pblock)
                 throw JSONRPCError(-7, "Out of memory");
-            vNewBlock.push_back(pblock);
+            vNewBlock.push_back(std::move(pblock));
         }
 
         // Update nTime
@@ -291,16 +309,16 @@ Value getworkex(const Array& params, bool fHelp)
 
         // Update nExtraNonce
         static unsigned int nExtraNonce = 0;
-        IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+        IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
 
         // Save
-        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
+        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock.get(), pblock->vtx[0].vin[0].scriptSig);
 
         // Prebuild hash buffers
         char pmidstate[32];
         char pdata[128];
         char phash1[64];
-        FormatHashBuffers(pblock, pmidstate, pdata, phash1);
+        FormatHashBuffers(pblock.get(), pmidstate, pdata, phash1);
 
         uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
@@ -317,7 +335,7 @@ Value getworkex(const Array& params, bool fHelp)
 
         Array merkle_arr;
 
-        BOOST_FOREACH(uint256 merkleh, merkle) {
+        for(uint256 merkleh : merkle) {
             merkle_arr.push_back(HexStr(BEGIN(merkleh), END(merkleh)));
         }
 
@@ -388,7 +406,7 @@ Value getwork(const Array& params, bool fHelp)
 
     typedef map<uint256, pair<CBlock*, CScript> > mapNewBlock_t;
     static mapNewBlock_t mapNewBlock;    // FIXME: thread safety
-    static vector<CBlock*> vNewBlock;
+    static vector<unique_ptr<CBlock>> vNewBlock;
 
     if (params.size() == 0)
     {
@@ -396,7 +414,7 @@ Value getwork(const Array& params, bool fHelp)
         static unsigned int nTransactionsUpdatedLast;
         static CBlockIndex* pindexPrev;
         static int64_t nStart;
-        static CBlock* pblock;
+        static unique_ptr<CBlock> pblock;
         if (pindexPrev != pindexBest ||
             (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - nStart > 60))
         {
@@ -404,8 +422,6 @@ Value getwork(const Array& params, bool fHelp)
             {
                 // Deallocate old blocks since they're obsolete now
                 mapNewBlock.clear();
-                BOOST_FOREACH(CBlock* pblock, vNewBlock)
-                    delete pblock;
                 vNewBlock.clear();
             }
 
@@ -421,7 +437,7 @@ Value getwork(const Array& params, bool fHelp)
             pblock = CreateNewBlock(*pMiningKey);
             if (!pblock)
                 throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
-            vNewBlock.push_back(pblock);
+            vNewBlock.push_back(std::move(pblock));
 
             // Need to update only after we know CreateNewBlock succeeded
             pindexPrev = pindexPrevNew;
@@ -433,16 +449,16 @@ Value getwork(const Array& params, bool fHelp)
 
         // Update nExtraNonce
         static unsigned int nExtraNonce = 0;
-        IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+        IncrementExtraNonce(pblock.get(), pindexPrev, nExtraNonce);
 
         // Save
-        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
+        mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock.get(), pblock->vtx[0].vin[0].scriptSig);
 
         // Pre-build hash buffers
         char pmidstate[32];
         char pdata[128];
         char phash1[64];
-        FormatHashBuffers(pblock, pmidstate, pdata, phash1);
+        FormatHashBuffers(pblock.get(), pmidstate, pdata, phash1);
 
         uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
@@ -534,7 +550,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
     static unsigned int nTransactionsUpdatedLast;
     static CBlockIndex* pindexPrev;
     static int64_t nStart;
-    static CBlock* pblock;
+    static unique_ptr<CBlock> pblock;
     if (pindexPrev != pindexBest ||
         (mempool.GetTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - nStart > 5))
     {
@@ -549,8 +565,7 @@ Value getblocktemplate(const Array& params, bool fHelp)
         // Create new block
         if(pblock)
         {
-            delete pblock;
-            pblock = NULL;
+            pblock.reset();
         }
         pblock = CreateNewBlock(*pMiningKey);
         if (!pblock)
@@ -568,7 +583,8 @@ Value getblocktemplate(const Array& params, bool fHelp)
     map<uint256, int64_t> setTxIndex;
     int i = 0;
     CTxDB txdb("r");
-    BOOST_FOREACH (CTransaction& tx, pblock->vtx)
+    CPegDB pegdb("r");
+    for(CTransaction& tx : pblock->vtx)
     {
         uint256 txHash = tx.GetHash();
         setTxIndex[txHash] = i++;
@@ -585,14 +601,16 @@ Value getblocktemplate(const Array& params, bool fHelp)
         entry.push_back(Pair("hash", txHash.GetHex()));
 
         MapPrevTx mapInputs;
+        MapFractions mapInputsFractions;
         map<uint256, CTxIndex> mapUnused;
+        MapFractions mapFractionsUnused;
         bool fInvalid = false;
-        if (tx.FetchInputs(txdb, mapUnused, false, false, mapInputs, fInvalid))
+        if (tx.FetchInputs(txdb, pegdb, mapUnused, mapFractionsUnused, false, false, mapInputs, mapInputsFractions, fInvalid))
         {
             entry.push_back(Pair("fee", (int64_t)(tx.GetValueIn(mapInputs) - tx.GetValueOut())));
 
             Array deps;
-            BOOST_FOREACH (MapPrevTx::value_type& inp, mapInputs)
+            for(MapPrevTx::value_type& inp : mapInputs)
             {
                 if (setTxIndex.count(inp.first))
                     deps.push_back(setTxIndex[inp.first]);

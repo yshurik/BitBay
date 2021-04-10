@@ -254,12 +254,16 @@ public:
         r = BN_secure_new();
         s = BN_secure_new();
         ECDSA_SIG_get0(sig, &r, &s);
-        BIGNUM *s1;
-        s1 = BN_secure_new();
-        BN_copy(s1,s);
         if (BN_cmp(s, halforder) > 0) {
             // enforce low S values, by negating the value (modulo the order) if above order/2.
+            BIGNUM *r1;
+            BIGNUM *s1;
+            r1 = BN_secure_new();
+            s1 = BN_secure_new();
+            BN_copy(r1,r);
+            BN_copy(s1,s);
             BN_sub(s1, order, s1);
+            ECDSA_SIG_set0(sig, r1, s1);
         }
 #endif
         BN_CTX_end(ctx);
@@ -720,7 +724,7 @@ CExtPubKey CExtKey::Neuter() const {
     return ret;
 }
 
-void CExtKey::Encode(unsigned char code[74]) const {
+void CExtKey::Encode(unsigned char code[BIP32_EXTKEY_SIZE]) const {
     code[0] = nDepth;
     memcpy(code+1, vchFingerprint, 4);
     code[5] = (nChild >> 24) & 0xFF; code[6] = (nChild >> 16) & 0xFF;
@@ -731,15 +735,15 @@ void CExtKey::Encode(unsigned char code[74]) const {
     memcpy(code+42, key.begin(), 32);
 }
 
-void CExtKey::Decode(const unsigned char code[74]) {
+void CExtKey::Decode(const unsigned char code[BIP32_EXTKEY_SIZE]) {
     nDepth = code[0];
     memcpy(vchFingerprint, code+1, 4);
     nChild = (code[5] << 24) | (code[6] << 16) | (code[7] << 8) | code[8];
     memcpy(vchChainCode, code+9, 32);
-    key.Set(code+42, code+74, true);
+    key.Set(code+42, code+BIP32_EXTKEY_SIZE, true);
 }
 
-void CExtPubKey::Encode(unsigned char code[74]) const {
+void CExtPubKey::Encode(unsigned char code[BIP32_EXTKEY_SIZE]) const {
     code[0] = nDepth;
     memcpy(code+1, vchFingerprint, 4);
     code[5] = (nChild >> 24) & 0xFF; code[6] = (nChild >> 16) & 0xFF;
@@ -749,12 +753,12 @@ void CExtPubKey::Encode(unsigned char code[74]) const {
     memcpy(code+41, pubkey.begin(), 33);
 }
 
-void CExtPubKey::Decode(const unsigned char code[74]) {
+void CExtPubKey::Decode(const unsigned char code[BIP32_EXTKEY_SIZE]) {
     nDepth = code[0];
     memcpy(vchFingerprint, code+1, 4);
     nChild = (code[5] << 24) | (code[6] << 16) | (code[7] << 8) | code[8];
     memcpy(vchChainCode, code+9, 32);
-    pubkey.Set(code+41, code+74);
+    pubkey.Set(code+41, code+BIP32_EXTKEY_SIZE);
 }
 
 bool CExtPubKey::Derive(CExtPubKey &out, unsigned int nChild) const {

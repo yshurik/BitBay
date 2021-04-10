@@ -13,6 +13,7 @@ HEADERS += \
     $$PWD/coincontrol.h \
     $$PWD/sync.h \
     $$PWD/util.h \
+    $$PWD/utilstrencodings.h \
     $$PWD/hash.h \
     $$PWD/uint256.h \
     $$PWD/kernel.h \
@@ -36,7 +37,8 @@ HEADERS += \
     $$PWD/netbase.h \
     $$PWD/clientversion.h \
     $$PWD/threadsafety.h \
-    $$PWD/tinyformat.h
+    $$PWD/tinyformat.h \
+    $$PWD/blockindexmap.h \
 
 SOURCES += \
     $$PWD/alert.cpp \
@@ -45,6 +47,7 @@ SOURCES += \
     $$PWD/sync.cpp \
     $$PWD/txmempool.cpp \
     $$PWD/util.cpp \
+    $$PWD/utilstrencodings.cpp \
     $$PWD/hash.cpp \
     $$PWD/netbase.cpp \
     $$PWD/key.cpp \
@@ -60,6 +63,7 @@ SOURCES += \
     $$PWD/protocol.cpp \
     $$PWD/noui.cpp \
     $$PWD/kernel.cpp \
+    $$PWD/blockindexmap.cpp \
 
 HEADERS += \
     $$PWD/crypto/pbkdf2.h \
@@ -87,10 +91,28 @@ SOURCES += \
 
 INCLUDEPATH += $$PWD/wallet
 
+explorer {
+    DEFINES += ENABLE_EXPLORER
+}
+
 wallet {
 
     DEFINES += ENABLE_WALLET
     
+    faucet {
+        DEFINES += ENABLE_FAUCET
+        SOURCES += \
+            $$PWD/exchange/rpcfaucet.cpp \
+    }
+    exchange {
+        DEFINES += ENABLE_EXCHANGE
+        SOURCES += \
+            $$PWD/exchange/rpcdeposit.cpp \
+            $$PWD/exchange/rpcexchange.cpp \
+            $$PWD/exchange/rpcwithdraw.cpp \
+            $$PWD/exchange/rpcexchange_util.cpp \
+    }
+
     HEADERS += \
         $$PWD/wallet/db.h \
         $$PWD/wallet/miner.h \
@@ -107,5 +129,8 @@ wallet {
         $$PWD/wallet/walletdb.cpp \
 
 }
+
+# peg system
+include($$PWD/peg/peg.pri)
 
 LIBS += -lz

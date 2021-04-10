@@ -22,6 +22,7 @@
 #include <boost/interprocess/sync/file_lock.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <openssl/crypto.h>
+#include <functional>
 
 #ifndef WIN32
 #include <signal.h>
@@ -36,9 +37,7 @@ CWallet* pwalletMain = NULL;
 #endif
 CClientUIInterface uiInterface;
 bool fConfChange;
-bool fMinimizeCoinAge;
 unsigned int nNodeLifespan;
-unsigned int nDerivationMethodIndex;
 unsigned int nMinerSleep;
 bool fUseFastIndex;
 
@@ -165,7 +164,7 @@ std::string HelpMessage()
     strUsage += "  -pid=<file>            " + _("Specify pid file (default: bitbayd.pid)") + "\n";
     strUsage += "  -datadir=<dir>         " + _("Specify data directory") + "\n";
     strUsage += "  -wallet=<dir>          " + _("Specify wallet file (within data directory)") + "\n";
-    strUsage += "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 25)") + "\n";
+    strUsage += "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 50)") + "\n";
     strUsage += "  -dblogsize=<n>         " + _("Set database disk log size in megabytes (default: 100)") + "\n";
     strUsage += "  -timeout=<n>           " + _("Specify connection timeout in milliseconds (default: 5000)") + "\n";
     strUsage += "  -proxy=<ip:port>       " + _("Connect through SOCKS5 proxy") + "\n";
@@ -338,8 +337,6 @@ bool AppInit2(boost::thread_group& threadGroup)
     fUseFastIndex = GetBoolArg("-fastindex", true);
     nMinerSleep = GetArg("-minersleep", 500);
 
-    nDerivationMethodIndex = 0;
-
     if (!SelectParamsFromCommandLine()) {
         return InitError("Invalid combination of -testnet and -regtest.");
     }
@@ -435,7 +432,6 @@ bool AppInit2(boost::thread_group& threadGroup)
 #endif
 
     fConfChange = GetBoolArg("-confchange", false);
-    fMinimizeCoinAge = GetBoolArg("-minimizecoinage", false);
 
 #ifdef ENABLE_WALLET
     if (mapArgs.count("-mininput"))
@@ -537,7 +533,7 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     if (mapArgs.count("-onlynet")) {
         std::set<enum Network> nets;
-        BOOST_FOREACH(std::string snet, mapMultiArgs["-onlynet"]) {
+        for(std::string snet : mapMultiArgs["-onlynet"]) {
             enum Network net = ParseNetwork(snet);
             if (net == NET_UNROUTABLE)
                 return InitError(strprintf(_("Unknown network specified in -onlynet: '%s'"), snet));
@@ -588,7 +584,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     {
         std::string strError;
         if (mapArgs.count("-bind")) {
-            BOOST_FOREACH(std::string strBind, mapMultiArgs["-bind"]) {
+            for(std::string strBind : mapMultiArgs["-bind"]) {
                 CService addrBind;
                 if (!Lookup(strBind.c_str(), addrBind, GetListenPort(), false))
                     return InitError(strprintf(_("Cannot resolve -bind address: '%s'"), strBind));
@@ -608,7 +604,7 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     if (mapArgs.count("-externalip"))
     {
-        BOOST_FOREACH(string strAddr, mapMultiArgs["-externalip"]) {
+        for(string strAddr : mapMultiArgs["-externalip"]) {
             CService addrLocal(strAddr, GetListenPort(), fNameLookup);
             if (!addrLocal.IsValid())
                 return InitError(strprintf(_("Cannot resolve -externalip address: '%s'"), strAddr));
@@ -619,16 +615,17 @@ bool AppInit2(boost::thread_group& threadGroup)
 #ifdef ENABLE_WALLET
     if (mapArgs.count("-reservebalance")) // ppcoin: reserve balance amount
     {
-        if (!ParseMoney(mapArgs["-reservebalance"], nReserveBalance))
+        if (!ParseMoney(mapArgs["-nostakebalance"], nNoStakeBalance))
         {
-            InitError(_("Invalid amount for -reservebalance=<amount>"));
+            InitError(_("Invalid amount for -nostakebalance=<amount>"));
             return false;
         }
     }
 #endif
 
-    BOOST_FOREACH(string strDest, mapMultiArgs["-seednode"])
+    for(string strDest : mapMultiArgs["-seednode"]) {
         AddOneShot(strDest);
+    }
 
     // ********************************************************* Step 7: load blockchain
 
@@ -636,7 +633,7 @@ bool AppInit2(boost::thread_group& threadGroup)
         std::string pre = _("Loading block index...");
         uiInterface.InitMessage(pre+txt);
     };
-
+    
     if (GetBoolArg("-loadblockindextest", false))
     {
         CTxDB txdb("r");
@@ -646,7 +643,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     }
 
     uiInterface.InitMessage(_("Loading block index..."));
-
+    
     nStart = GetTimeMillis();
     if (!LoadBlockIndex(load_msg))
         return InitError(_("Error loading block database"));
@@ -791,10 +788,16 @@ bool AppInit2(boost::thread_group& threadGroup)
     std::vector<boost::filesystem::path> vImportFiles;
     if (mapArgs.count("-loadblock"))
     {
-        BOOST_FOREACH(string strFile, mapMultiArgs["-loadblock"])
+        for(string strFile : mapMultiArgs["-loadblock"]) {
             vImportFiles.push_back(strFile);
+        }
     }
-    threadGroup.create_thread(boost::bind(&ThreadImport, vImportFiles));
+    // at least 1MB for import (musl 80KB)
+    boost::thread::attributes import_thread_attrs;
+    import_thread_attrs.set_stack_size(1096*1096); 
+    auto import_thread = new boost::thread(import_thread_attrs,
+                                    boost::bind(&ThreadImport, vImportFiles));
+    threadGroup.add_thread(import_thread);
 
     // ********************************************************* Step 10: load peers
 
@@ -839,11 +842,19 @@ bool AppInit2(boost::thread_group& threadGroup)
         StartRPCThreads();
 
 #ifdef ENABLE_WALLET
+#if !defined(ENABLE_EXCHANGE)
     // Mine proof-of-stake blocks in the background
     if (!GetBoolArg("-staking", true))
         LogPrintf("Staking disabled\n");
-    else if (pwalletMain)
-        threadGroup.create_thread(boost::bind(&ThreadStakeMiner, pwalletMain));
+    else if (pwalletMain) {
+        // at least 1MB for mining (musl 80KB)
+        boost::thread::attributes miner_thread_attrs;
+        miner_thread_attrs.set_stack_size(1096*1096); 
+        auto miner_thread = new boost::thread(miner_thread_attrs,
+                                       boost::bind(&ThreadStakeMiner, pwalletMain));
+        threadGroup.add_thread(miner_thread);
+    }
+#endif
 #endif
 
     // ********************************************************* Step 12: finished

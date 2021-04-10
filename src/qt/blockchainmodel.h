@@ -26,6 +26,9 @@ public:
     enum ColumnIndex {
         Height = 0, /**< Height of the block */
         Hash,        /**< Blok hash */
+        Votes,
+        Peg,
+        Mined,
         Date        /**< Block date */
     };
     enum Roles {
@@ -35,7 +38,11 @@ public:
         TxNumRole,
         OutNumRole,
         FractionsRole,
-        PegSupplyRole
+        PegCycleRole,
+        PegSupplyRole,
+        PegSupplyNRole,
+        PegSupplyNNRole,
+        ValueForCopy
     };
 
     /** @name Methods overridden from QAbstractItemModel

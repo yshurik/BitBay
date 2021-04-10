@@ -8,6 +8,7 @@
 #include "addrman.h"
 #include "hash.h"
 #include "util.h"
+#include "utilstrencodings.h"
 
 #ifndef WIN32
 #include <sys/stat.h>
@@ -79,7 +80,7 @@ bool CDBEnv::Open(boost::filesystem::path pathEnv_)
     if (GetBoolArg("-privdb", true))
         nEnvFlags |= DB_PRIVATE;
 
-    int nDbCache = GetArg("-dbcache", 25);
+    int nDbCache = GetArg("-dbcache", 50);
     dbenv.set_lg_dir(pathLogDir.string().c_str());
     dbenv.set_cachesize(nDbCache / 1024, (nDbCache % 1024)*1048576, 1);
     dbenv.set_lg_bsize(1048576);

@@ -12,7 +12,11 @@ HEADERS += \
     $$PWD/addressbookpage.h \
     $$PWD/signmessagepage.h \
     $$PWD/verifymessagepage.h \
+    $$PWD/stakingpage.h \
+    $$PWD/dynamicpegpage.h \
     $$PWD/blockchainpage.h \
+    $$PWD/txdetailswidget.h \
+    $$PWD/itemdelegates.h \
     $$PWD/aboutdialog.h \
     $$PWD/editaddressdialog.h \
     $$PWD/bitcoinaddressvalidator.h \
@@ -54,7 +58,11 @@ SOURCES += \
     $$PWD/addressbookpage.cpp \
     $$PWD/signmessagepage.cpp \
     $$PWD/verifymessagepage.cpp \
+    $$PWD/stakingpage.cpp \
+    $$PWD/dynamicpegpage.cpp \
     $$PWD/blockchainpage.cpp \
+    $$PWD/txdetailswidget.cpp \
+    $$PWD/itemdelegates.cpp \
     $$PWD/aboutdialog.cpp \
     $$PWD/editaddressdialog.cpp \
     $$PWD/bitcoinaddressvalidator.cpp \
@@ -93,7 +101,10 @@ FORMS += \
     $$PWD/forms/addressbookpage.ui \
     $$PWD/forms/signmessagepage.ui \
     $$PWD/forms/verifymessagepage.ui \
+    $$PWD/forms/stakingpage.ui \
+    $$PWD/forms/dynamicpegpage.ui \
     $$PWD/forms/blockchainpage.ui \
+    $$PWD/forms/txdetails.ui \
     $$PWD/forms/aboutdialog.ui \
     $$PWD/forms/editaddressdialog.ui \
     $$PWD/forms/transactiondescdialog.ui \
@@ -102,7 +113,9 @@ FORMS += \
     $$PWD/forms/askpassphrasedialog.ui \
     $$PWD/forms/rpcconsole.ui \
     $$PWD/forms/optionsdialog.ui \
-    $$PWD/forms/fractionsdialog.ui
+    $$PWD/forms/fractionsdialog.ui \
+    $$PWD/forms/frozeninfodialog.ui \
+    $$PWD/forms/pegvotesdialog.ui \
 
 contains(USE_QRCODE, 1) {
     HEADERS += $$PWD/qrcodedialog.h

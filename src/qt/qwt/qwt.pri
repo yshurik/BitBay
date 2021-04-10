@@ -294,3 +294,6 @@ contains(QWT_CONFIG, QwtWidgets) {
         $$PWD/qwt_thermo.cpp \
         $$PWD/qwt_wheel.cpp
 }
+
+HEADERS += $$PWD/reserve_meter.h
+SOURCES += $$PWD/reserve_meter.cpp

@@ -19,16 +19,18 @@
 #include "script.h"
 #include "ui_interface.h"
 #include "util.h"
+#include "peg.h"
 
 // Settings
 extern int64_t nTransactionFee;
-extern int64_t nReserveBalance;
+extern int64_t nNoStakeBalance;
 extern int64_t nMinimumInputValue;
 extern bool fWalletUnlockStakingOnly;
 extern bool fConfChange;
 
 class CAccountingEntry;
 class CCoinControl;
+class CSelectedCoin;
 class CWalletTx;
 class CReserveKey;
 class COutput;
@@ -72,6 +74,30 @@ public:
     )
 };
 
+struct RewardInfo {
+    PegRewardType type;
+    int64_t amount;
+    int count;
+    int stake;
+};
+
+class CFrozenCoinInfo
+{
+public:
+    uint256 txhash;
+    int n;
+    int64_t nValue;
+    uint64_t nFlags;
+    uint64_t nLockTime;
+    bool operator==(const CFrozenCoinInfo & b) const {
+        return txhash==b.txhash &&
+                n==b.n &&
+                nValue==b.nValue &&
+                nFlags==b.nFlags &&
+                nLockTime==b.nFlags;
+    }
+};
+
 /** A CWallet is an extension of a keystore, which also maintains a set of transactions and balances,
  * and provides the ability to create new transactions.
  */
@@ -79,7 +105,7 @@ class CWallet : public CCryptoKeyStore, public CWalletInterface
 {
 private:
     bool SelectCoinsForStaking(int64_t nTargetValue, unsigned int nSpendTime, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64_t& nValueRet) const;
-    bool SelectCoins(int64_t nTargetValue, unsigned int nSpendTime, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64_t& nValueRet, const CCoinControl *coinControl=NULL) const;
+    bool SelectCoins(PegTxType txType, int64_t nTargetValue, unsigned int nSpendTime, std::set<CSelectedCoin>& setCoinsRet, int64_t& nValueRet, bool fUseFrozenUnlocked, const CCoinControl *coinControl) const;
 
     CWalletDB *pwalletdbEncryption;
 
@@ -89,6 +115,25 @@ private:
     // the maximum wallet format version: memory-only variable that specifies to what version this wallet may be upgraded
     int nWalletMaxVersion;
 
+    // peg vote type for staking
+    PegVoteType pegVoteType = PEG_VOTE_AUTO;
+    PegVoteType trackerVoteType = PEG_VOTE_NONE;
+    PegVoteType lastAutoPegVoteType = PEG_VOTE_AUTO;
+    
+    std::vector<double> vBayRates;
+    std::vector<double> vBtcRates;
+    double dBayPeakPrice = 0;
+    
+    std::string rewardAddress;
+    std::string supportAddress;
+    bool supportEnabled = true;
+    uint32_t supportPart;
+    bool consolidateEnabled = true;
+    int nConsolidateLeast = 5;
+    int nConsolidateMin = 20;
+    int nConsolidateMax = 50;
+    int64_t nConsolidateMaxAmount = 10000000000000;
+    
 public:
     /// Main wallet lock.
     /// This lock protects all the fields added by CWallet
@@ -138,14 +183,21 @@ public:
 
     CPubKey vchDefaultKey;
     int64_t nTimeFirstKey;
+    mutable uint256 nLastHashBestChain;
+    mutable int nLastPegCycle = 1;
+    mutable int nLastPegSupplyIndex = 0;
+    mutable int nLastPegSupplyNIndex = 0;
+    mutable int nLastPegSupplyNNIndex = 0;
+    mutable int nLastPegSupplyIndexToRecalc = 0;
+    mutable unsigned int nLastBlockTime = 0;
 
     // check whether we are allowed to upgrade (or already support) to the named feature
     bool CanSupportFeature(enum WalletFeature wf) { AssertLockHeld(cs_wallet); return nWalletMaxVersion >= wf; }
 
     void AvailableCoinsForStaking(std::vector<COutput>& vCoins, unsigned int nSpendTime) const;
-    void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const CCoinControl *coinControl=NULL) const;
-    bool SelectCoinsMinConf(int64_t nTargetValue, unsigned int nSpendTime, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64_t& nValueRet) const;
-    bool SelectCoinsMinConfByCoinAge(int64_t nTargetValue, unsigned int nSpendTime, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64_t& nValueRet) const;
+    void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed, bool fUseFrozenUnlocked, const CCoinControl *coinControl) const;
+    void FrozenCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed, bool fClearArray, const CCoinControl *coinControl) const;
+    bool SelectCoinsMinConf(PegTxType txType, int64_t nTargetValue, unsigned int nSpendTime, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<CSelectedCoin>& setCoinsRet, int64_t& nValueRet) const;
 
     // keystore implementation
     // Generate a new key
@@ -194,24 +246,47 @@ public:
 
     void MarkDirty();
     bool AddToWallet(const CWalletTx& wtxIn);
-    void SyncTransaction(const CTransaction& tx, const CBlock* pblock, bool fConnect = true);
-    bool AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pblock, bool fUpdate);
+    void SyncTransaction(const CTransaction& tx, const CBlock* pblock, bool fConnect, const MapFractions&);
+    bool AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pblock, bool fUpdate, const MapFractions&);
+    void CleanFractionsOfSpentTxouts(const CBlock* pblock);
     void EraseFromWallet(const uint256 &hash);
     void WalletUpdateSpent(const CTransaction& prevout, bool fBlock = false);
     int ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate = false);
     void ReacceptWalletTransactions();
     void ResendWalletTransactions(bool fForce = false);
     int64_t GetBalance() const;
+    int64_t GetReserve() const;
+    int64_t GetFrozen(std::vector<CFrozenCoinInfo>* pFrozenCoins =NULL) const;
+    int64_t GetLiquidity() const;
     int64_t GetUnconfirmedBalance() const;
     int64_t GetImmatureBalance() const;
     int64_t GetStake() const;
     int64_t GetNewMint() const;
-    bool CreateTransaction(const std::vector<std::pair<CScript, int64_t> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey, int64_t& nFeeRet, const CCoinControl *coinControl=NULL);
+    int GetPegCycle() const;
+    int GetPegSupplyIndex() const;
+    int GetPegSupplyNIndex() const;
+    int GetPegSupplyNNIndex() const;
+    bool GetRewardInfo(std::vector<RewardInfo> &) const;
+    bool CreateTransaction(PegTxType txType, 
+                           const std::vector<std::pair<CScript, int64_t> >& vecSend, 
+                           CWalletTx& wtxNew, 
+                           CReserveKey& reservekey, 
+                           int64_t& nFeeRet, 
+                           const CCoinControl *coinControl, 
+                           bool fTest,
+                           std::string & sFailCause);
     bool CreateTransaction(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNew, CReserveKey& reservekey, int64_t& nFeeRet, const CCoinControl *coinControl=NULL);
     bool CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey);
 
     uint64_t GetStakeWeight() const;
-    bool CreateCoinStake(const CKeyStore& keystore, unsigned int nBits, int64_t nSearchInterval, int64_t nFees, CTransaction& txNew, CKey& key);
+    bool CreateCoinStake(const CKeyStore& keystore, 
+                         unsigned int nBits, 
+                         int64_t nSearchInterval, 
+                         int64_t nFees, 
+                         CTransaction& txCoinStake, 
+                         CTransaction& txConsolidate,
+                         CKey& key, 
+                         PegVoteType);
 
     std::string SendMoney(CScript scriptPubKey, int64_t nValue, CWalletTx& wtxNew, bool fAskFee=false);
     std::string SendMoneyToDestination(const CTxDestination &address, int64_t nValue, CWalletTx& wtxNew, bool fAskFee=false);
@@ -241,6 +316,10 @@ public:
             throw std::runtime_error("CWallet::GetCredit() : value out of range");
         return (IsMine(txout) ? txout.nValue : 0);
     }
+    int64_t GetFrozen(uint256 txhash, long nOut, const CTxOut& txout,
+                      std::vector<CFrozenCoinInfo>* pFrozenCoins=NULL) const;
+    int64_t GetReserve(uint256 txhash, long nOut, const CTxOut& txout) const;
+    int64_t GetLiquidity(uint256 txhash, long nOut, const CTxOut& txout) const;
     bool IsChange(const CTxOut& txout) const;
     int64_t GetChange(const CTxOut& txout) const
     {
@@ -250,9 +329,10 @@ public:
     }
     bool IsMine(const CTransaction& tx) const
     {
-        BOOST_FOREACH(const CTxOut& txout, tx.vout)
+        for(const CTxOut& txout : tx.vout) {
             if (IsMine(txout) && txout.nValue >= nMinimumInputValue)
                 return true;
+        }
         return false;
     }
     bool IsFromMe(const CTransaction& tx) const
@@ -262,7 +342,7 @@ public:
     int64_t GetDebit(const CTransaction& tx) const
     {
         int64_t nDebit = 0;
-        BOOST_FOREACH(const CTxIn& txin, tx.vin)
+        for(const CTxIn& txin : tx.vin)
         {
             nDebit += GetDebit(txin);
             if (!MoneyRange(nDebit))
@@ -273,7 +353,7 @@ public:
     int64_t GetCredit(const CTransaction& tx) const
     {
         int64_t nCredit = 0;
-        BOOST_FOREACH(const CTxOut& txout, tx.vout)
+        for(const CTxOut& txout : tx.vout)
         {
             nCredit += GetCredit(txout);
             if (!MoneyRange(nCredit))
@@ -284,7 +364,7 @@ public:
     int64_t GetChange(const CTransaction& tx) const
     {
         int64_t nChange = 0;
-        BOOST_FOREACH(const CTxOut& txout, tx.vout)
+        for(const CTxOut& txout : tx.vout)
         {
             nChange += GetChange(txout);
             if (!MoneyRange(nChange))
@@ -341,6 +421,34 @@ public:
      * @note called with lock cs_wallet held.
      */
     boost::signals2::signal<void (CWallet *wallet, const uint256 &hashTx, ChangeType status)> NotifyTransactionChanged;
+    
+    // get the current vote type for staking
+    PegVoteType GetPegVoteType() { LOCK(cs_wallet); return pegVoteType; }
+    
+    // get the current vote type for staking
+    bool SetPegVoteType(PegVoteType type) { LOCK(cs_wallet); pegVoteType = type; return true; }
+    PegVoteType LastAutoVoteType() const { LOCK(cs_wallet); return lastAutoPegVoteType; }
+    double LastPeakPrice() const { LOCK(cs_wallet); return dBayPeakPrice; }
+    
+    void SetBayRates(std::vector<double>);
+    void SetBtcRates(std::vector<double>);
+    void SetTrackerVote(PegVoteType, double dPeakRate);
+    
+    bool SetRewardAddress(std::string addr, bool write_wallet);
+    std::string GetRewardAddress() const;
+
+    bool SetSupportEnabled(bool on, bool write_wallet);
+    bool GetSupportEnabled() const;
+    
+    bool SetSupportAddress(std::string addr, bool write_wallet);
+    std::string GetSupportAddress() const;
+    
+    bool SetSupportPart(uint32_t percent, bool write_wallet);
+    uint32_t GetSupportPart() const;
+    
+    bool SetConsolidateEnabled(bool on, bool write_wallet);
+    bool GetConsolidateEnabled() const;
+    
 };
 
 /** A key allocated from the key pool. */
@@ -389,6 +497,40 @@ static void WriteOrderPos(const int64_t& nOrderPos, mapValue_t& mapValue)
     mapValue["n"] = i64tostr(nOrderPos);
 }
 
+class CFractionsRef {
+public:
+    CFractionsRef() {}
+    CFractionsRef(const CFractionsRef & cp) {
+        if (cp.ptr) {
+            ptr = std::unique_ptr<CFractions>(new CFractions(*cp.ptr));
+        }
+    }
+    void Init(int64_t value) {
+         nValue = value;
+         ptr.reset();
+    }
+    CFractions & Ref() const {
+        if (!ptr) {
+            ptr = std::unique_ptr<CFractions>(new CFractions(nValue, CFractions::STD));
+        }
+        return *ptr;
+    }
+    void UnRef() const {
+        if (!ptr) return;
+        ptr.reset();
+    }
+    uint32_t nFlags() const {
+        if (!ptr) return CFractions::VALUE;
+        return ptr->nFlags;
+    }
+    uint64_t nLockTime() const {
+        if (!ptr) return 0;
+        return ptr->nLockTime;
+    }
+    
+    int64_t nValue = 0;
+    mutable std::unique_ptr<CFractions> ptr;
+};
 
 /** A transaction with a bunch of additional info that only the owner cares about.
  * It includes any unrecorded transactions needed to link it back to the block chain.
@@ -408,17 +550,27 @@ public:
     char fFromMe;
     std::string strFromAccount;
     std::vector<char> vfSpent; // which outputs are already spent
+    std::vector<CFractionsRef> vOutFractions;
     int64_t nOrderPos;  // position in ordered transaction list
 
     // memory only
-    mutable bool fDebitCached;
-    mutable bool fCreditCached;
-    mutable bool fAvailableCreditCached;
-    mutable bool fChangeCached;
-    mutable int64_t nDebitCached;
-    mutable int64_t nCreditCached;
-    mutable int64_t nAvailableCreditCached;
-    mutable int64_t nChangeCached;
+    mutable bool fDebitCached               = false;
+    mutable bool fCreditCached              = false;
+    mutable bool fAvailableCreditCached     = false;
+    mutable uint64_t nLastTimeAvailableFrozenCached = 0;
+    mutable bool fAvailableReserveCached    = false;
+    mutable bool fAvailableLiquidityCached  = false;
+    mutable bool fChangeCached              = false;
+    mutable bool fRewardsInfoCached         = false;
+    mutable int64_t nDebitCached                = 0;
+    mutable int64_t nCreditCached               = 0;
+    mutable int64_t nAvailableCreditCached      = 0;
+    mutable int64_t nAvailableFrozenCached      = 0;
+    mutable int64_t nAvailableReserveCached     = 0;
+    mutable int64_t nAvailableLiquidityCached   = 0;
+    mutable int64_t nChangeCached               = 0;
+    mutable std::vector<RewardInfo> vRewardsInfoCached;
+    mutable std::vector<CFrozenCoinInfo> vFrozenCoinInfoCached;
 
     CWalletTx()
     {
@@ -452,15 +604,13 @@ public:
         fFromMe = false;
         strFromAccount.clear();
         vfSpent.clear();
-        fDebitCached = false;
-        fCreditCached = false;
-        fAvailableCreditCached = false;
-        fChangeCached = false;
-        nDebitCached = 0;
-        nCreditCached = 0;
-        nAvailableCreditCached = 0;
-        nChangeCached = 0;
         nOrderPos = -1;
+        vRewardsInfoCached.clear();
+        vRewardsInfoCached.push_back({PEG_REWARD_5 ,0,0,0});
+        vRewardsInfoCached.push_back({PEG_REWARD_10,0,0,0});
+        vRewardsInfoCached.push_back({PEG_REWARD_20,0,0,0});
+        vRewardsInfoCached.push_back({PEG_REWARD_40,0,0,0});
+        vFrozenCoinInfoCached.clear();
     }
 
     IMPLEMENT_SERIALIZE
@@ -475,7 +625,7 @@ public:
             pthis->mapValue["fromaccount"] = pthis->strFromAccount;
 
             std::string str;
-            BOOST_FOREACH(char f, vfSpent)
+            for(char f : vfSpent)
             {
                 str += (f ? '1' : '0');
                 if (f)
@@ -502,9 +652,11 @@ public:
         {
             pthis->strFromAccount = pthis->mapValue["fromaccount"];
 
-            if (mapValue.count("spent"))
-                BOOST_FOREACH(char c, pthis->mapValue["spent"])
+            if (mapValue.count("spent")) {
+                for(char c : pthis->mapValue["spent"]) {
                     pthis->vfSpent.push_back(c != '0');
+                }
+            }
             else
                 pthis->vfSpent.assign(vout.size(), fSpent);
 
@@ -535,6 +687,10 @@ public:
                 vfSpent[i] = true;
                 fReturn = true;
                 fAvailableCreditCached = false;
+                nLastTimeAvailableFrozenCached = 0;
+                fAvailableReserveCached = false;
+                fAvailableLiquidityCached = false;
+                fRewardsInfoCached = false;
             }
         }
         return fReturn;
@@ -545,8 +701,12 @@ public:
     {
         fCreditCached = false;
         fAvailableCreditCached = false;
+        nLastTimeAvailableFrozenCached = 0;
+        fAvailableReserveCached = false;
+        fAvailableLiquidityCached = false;
         fDebitCached = false;
         fChangeCached = false;
+        fRewardsInfoCached = false;
     }
 
     void BindWallet(CWallet *pwalletIn)
@@ -564,6 +724,10 @@ public:
         {
             vfSpent[nOut] = true;
             fAvailableCreditCached = false;
+            nLastTimeAvailableFrozenCached = 0;
+            fAvailableReserveCached = false;
+            fAvailableLiquidityCached = false;
+            fRewardsInfoCached = false;
         }
     }
 
@@ -576,6 +740,10 @@ public:
         {
             vfSpent[nOut] = false;
             fAvailableCreditCached = false;
+            nLastTimeAvailableFrozenCached = 0;
+            fAvailableReserveCached = false;
+            fAvailableLiquidityCached = false;
+            fRewardsInfoCached = false;
         }
     }
 
@@ -638,7 +806,201 @@ public:
         fAvailableCreditCached = true;
         return nCredit;
     }
+    
+    int64_t GetAvailableReserve(bool fUseCache=true) const
+    {
+        // Must wait until coinbase is safely deep enough in the chain before valuing it
+        if ((IsCoinBase() || IsCoinStake()) && GetBlocksToMaturity() > 0)
+            return 0;
 
+        if (fUseCache && fAvailableReserveCached)
+            return nAvailableReserveCached;
+
+        int64_t nReserve = 0;
+        for (unsigned int i = 0; i < vout.size(); i++)
+        {
+            if (!IsSpent(i))
+            {
+                const CTxOut &txout = vout[i];
+                if (pwallet->IsMine(txout)) {
+                    nReserve += pwallet->GetReserve(GetHash(), i, txout);
+                    if (!MoneyRange(nReserve))
+                        throw std::runtime_error("CWalletTx::GetAvailableReserve() : value out of range");
+                }
+            }
+        }
+
+        nAvailableReserveCached = nReserve;
+        fAvailableReserveCached = true;
+        return nReserve;
+    }
+    
+    int64_t GetAvailableLiquidity(bool fUseCache=true) const
+    {
+        // Must wait until coinbase is safely deep enough in the chain before valuing it
+        if ((IsCoinBase() || IsCoinStake()) && GetBlocksToMaturity() > 0)
+            return 0;
+
+        if (fUseCache && fAvailableLiquidityCached)
+            return nAvailableLiquidityCached;
+
+        int64_t nLiquidity = 0;
+        for (unsigned int i = 0; i < vout.size(); i++)
+        {
+            if (!IsSpent(i))
+            {
+                const CTxOut &txout = vout[i];
+                if (pwallet->IsMine(txout)) {
+                    nLiquidity += pwallet->GetLiquidity(GetHash(), i, txout);
+                    if (!MoneyRange(nLiquidity))
+                        throw std::runtime_error("CWalletTx::GetAvailableLiquidity() : value out of range");
+                }
+            }
+        }
+
+        nAvailableLiquidityCached = nLiquidity;
+        fAvailableLiquidityCached = true;
+        return nLiquidity;
+    }
+    
+    int64_t GetAvailableFrozen(bool fUseCache=true, 
+                               std::vector<CFrozenCoinInfo>* pFrozenCoins=NULL) const
+    {
+        // Must wait until coinbase is safely deep enough in the chain before valuing it
+        if ((IsCoinBase() || IsCoinStake()) && GetBlocksToMaturity() > 0)
+            return 0;
+
+        uint64_t nLastTime = pindexBest ? pindexBest->nTime : 0;
+        if (fUseCache && (nLastTimeAvailableFrozenCached > 0 && nLastTime < nLastTimeAvailableFrozenCached)) {
+            if (pFrozenCoins) {
+                for (auto fcoin : vFrozenCoinInfoCached) {
+                    pFrozenCoins->push_back(fcoin);
+                }
+            }
+            return nAvailableFrozenCached;
+        }
+
+        int64_t nFrozen = 0;
+        uint64_t nMinLockTime = 0;
+        std::vector<CFrozenCoinInfo> vFrozenCoinInfo;
+        for (unsigned int i = 0; i < vout.size(); i++)
+        {
+            if (!IsSpent(i))
+            {
+                const CTxOut &txout = vout[i];
+                if (pwallet->IsMine(txout)) {
+                    nFrozen += pwallet->GetFrozen(GetHash(), i, txout, &vFrozenCoinInfo);
+                    if (!MoneyRange(nFrozen))
+                        throw std::runtime_error("CWalletTx::GetAvailableFrozen() : value out of range");
+                }
+            }
+        }
+        
+        if (!vFrozenCoinInfo.empty()) {
+            nMinLockTime = vFrozenCoinInfo.front().nLockTime;
+        }
+        for (auto fcoin : vFrozenCoinInfo) {
+            if (fcoin.nLockTime < nMinLockTime) {
+                nMinLockTime = fcoin.nLockTime;
+            }
+        }
+
+        if (pFrozenCoins) {
+            for (auto fcoin : vFrozenCoinInfo) {
+                pFrozenCoins->push_back(fcoin);
+            }
+        }
+        vFrozenCoinInfoCached = vFrozenCoinInfo;
+        nAvailableFrozenCached = nFrozen;
+        nLastTimeAvailableFrozenCached = nMinLockTime;
+        return nFrozen;
+    }
+    
+    bool GetRewardInfo(std::vector<RewardInfo> & vRewardsInfo, bool fUseCache=true) const
+    {
+        if (vRewardsInfo.size() != PEG_REWARD_LAST)
+            return false;
+        
+        if (fUseCache && fRewardsInfoCached) {
+            for(int i=0; i< PEG_REWARD_LAST; i++) {
+                vRewardsInfo[i].count += vRewardsInfoCached[i].count;
+                vRewardsInfo[i].stake += vRewardsInfoCached[i].stake;
+                vRewardsInfo[i].amount += vRewardsInfoCached[i].amount;
+            }
+            return true;
+        }
+
+        // clean-up
+        for(int i=0; i< PEG_REWARD_LAST; i++) {
+            vRewardsInfoCached[i].count  = 0;
+            vRewardsInfoCached[i].stake  = 0;
+            vRewardsInfoCached[i].amount = 0;
+        }
+        int nSupply = pwallet->nLastPegSupplyIndex;
+        for (unsigned int i = 0; i < vout.size(); i++)
+        {
+            if (!IsSpent(i) && vOutFractions[i].ptr)
+            {
+                const CTxOut &txout = vout[i];
+                if (pwallet->IsMine(txout)) {
+                    bool fConfirmed = GetDepthInMainChain() >= nStakeMinConfirmations;
+                    bool fStake = IsCoinStake() && GetBlocksToMaturity() > 0 && GetDepthInMainChain() > 0;
+                        
+                    if (vOutFractions[i].ptr->nFlags & CFractions::NOTARY_V) {
+                        if (fStake) {
+                            vRewardsInfoCached[PEG_REWARD_40].count++;
+                            vRewardsInfoCached[PEG_REWARD_40].amount += txout.nValue;
+                            vRewardsInfoCached[PEG_REWARD_40].stake++;
+                        } else if (fConfirmed) {
+                            vRewardsInfoCached[PEG_REWARD_40].count++;
+                            vRewardsInfoCached[PEG_REWARD_40].amount += txout.nValue;
+                        }
+                    }
+                    else if (vOutFractions[i].ptr->nFlags & CFractions::NOTARY_F) {
+                        if (fStake) {
+                            vRewardsInfoCached[PEG_REWARD_20].count++;
+                            vRewardsInfoCached[PEG_REWARD_20].amount += txout.nValue;
+                            vRewardsInfoCached[PEG_REWARD_20].stake++;
+                        } else if (fConfirmed) {
+                            vRewardsInfoCached[PEG_REWARD_20].count++;
+                            vRewardsInfoCached[PEG_REWARD_20].amount += txout.nValue;
+                        }
+                    }
+                    else {
+                        int64_t reserve = vOutFractions[i].ptr->Low(nSupply);
+                        int64_t liquidity = vOutFractions[i].ptr->High(nSupply);
+                        if (liquidity < reserve) {
+                            if (fStake) {
+                                vRewardsInfoCached[PEG_REWARD_10].count++;
+                                vRewardsInfoCached[PEG_REWARD_10].amount += txout.nValue;
+                                vRewardsInfoCached[PEG_REWARD_10].stake++;
+                            } else if (fConfirmed) {
+                                vRewardsInfoCached[PEG_REWARD_10].count++;
+                                vRewardsInfoCached[PEG_REWARD_10].amount += txout.nValue;
+                            }
+                        } else {
+                            if (fStake) {
+                                vRewardsInfoCached[PEG_REWARD_5].count++;
+                                vRewardsInfoCached[PEG_REWARD_5].amount += txout.nValue;
+                                vRewardsInfoCached[PEG_REWARD_5].stake++;
+                            } else if (fConfirmed) {
+                                vRewardsInfoCached[PEG_REWARD_5].count++;
+                                vRewardsInfoCached[PEG_REWARD_5].amount += txout.nValue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ready
+        for(int i=0; i< PEG_REWARD_LAST; i++) {
+            vRewardsInfo[i].count += vRewardsInfoCached[i].count;
+            vRewardsInfo[i].stake += vRewardsInfoCached[i].stake;
+            vRewardsInfo[i].amount += vRewardsInfoCached[i].amount;
+        }
+        return true;
+    }
 
     int64_t GetChange() const
     {
@@ -695,11 +1057,12 @@ public:
 
             if (mapPrev.empty())
             {
-                BOOST_FOREACH(const CMerkleTx& tx, vtxPrev)
+                for(const CMerkleTx& tx : vtxPrev) {
                     mapPrev[tx.GetHash()] = &tx;
+                }
             }
 
-            BOOST_FOREACH(const CTxIn& txin, ptx->vin)
+            for(const CTxIn& txin : ptx->vin)
             {
                 if (!mapPrev.count(txin.prevout.hash))
                     return false;
@@ -744,9 +1107,28 @@ public:
     {
         return strprintf("COutput(%s, %d, %d) [%s]", tx->GetHash().ToString(), i, nDepth, FormatMoney(tx->vout[i].nValue));
     }
+    
+    uint64_t FrozenUnlockTime() const;
+    bool IsFrozen(unsigned int nLastBlockTime) const;
+    bool IsFrozenMark() const;
+    bool IsColdMark() const;
 };
 
 
+class CSelectedCoin
+{
+public:
+    const CWalletTx* tx;
+    unsigned int i;
+    int64_t nAvailableValue;
+    
+    friend bool operator<(const CSelectedCoin &a, const CSelectedCoin &b) { 
+        if (a.tx < b.tx) return true;
+        if (a.tx == b.tx && a.i < b.i) return true;
+        if (a.tx == b.tx && a.i == b.i && a.nAvailableValue < b.nAvailableValue) return true;
+        return false;
+    }
+};
 
 
 /** Private key that includes an expiration date in case it never gets used. */

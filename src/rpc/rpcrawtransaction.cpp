@@ -1,5 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Bitcoin developers
+// Copyright (c) 2018-2020 yshurik
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -42,19 +43,27 @@ void ScriptPubKeyToJSON(const CScript& scriptPubKey, Object& out, bool fIncludeH
     out.push_back(Pair("type", GetTxnOutputType(type)));
 
     Array a;
-    BOOST_FOREACH(const CTxDestination& addr, addresses)
+    for(const CTxDestination& addr : addresses) {
         a.push_back(CBitcoinAddress(addr).ToString());
+    }
     out.push_back(Pair("addresses", a));
 }
 
-void TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
+void TxToJSON(const CTransaction& tx, 
+              const uint256 hashBlock,
+              const MapFractions& mapFractions, 
+              int nSupply,
+              Object& entry)
 {
     entry.push_back(Pair("txid", tx.GetHash().GetHex()));
     entry.push_back(Pair("version", tx.nVersion));
     entry.push_back(Pair("time", (int64_t)tx.nTime));
     entry.push_back(Pair("locktime", (int64_t)tx.nLockTime));
+    if (nSupply >= 0) {
+        entry.push_back(Pair("peg", nSupply));
+    }
     Array vin;
-    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+    for(const CTxIn& txin : tx.vin)
     {
         Object in;
         if (tx.IsCoinBase())
@@ -78,6 +87,28 @@ void TxToJSON(const CTransaction& tx, const uint256 hashBlock, Object& entry)
         const CTxOut& txout = tx.vout[i];
         Object out;
         out.push_back(Pair("value", ValueFromAmount(txout.nValue)));
+        if (nSupply >= 0) {
+            auto fkey = uint320(tx.GetHash(), i);
+            if (mapFractions.find(fkey) != mapFractions.end()) {
+                const CFractions & fractions = mapFractions.at(fkey);
+                
+                int lock = 0;
+                string flags;
+                if (fractions.nFlags & CFractions::NOTARY_F) flags = "F";
+                if (fractions.nFlags & CFractions::NOTARY_V) flags = "V";
+                if (fractions.nFlags & CFractions::NOTARY_C) flags = "C";
+                if (!flags.empty()) lock = fractions.nLockTime;
+                
+                if (fractions.Total() == txout.nValue) {
+                    out.push_back(Pair("reserve", ValueFromAmount(fractions.Low(nSupply))));
+                    out.push_back(Pair("liquidity", ValueFromAmount(fractions.High(nSupply))));
+                    if (!flags.empty()) {
+                        out.push_back(Pair("flags", flags));
+                        out.push_back(Pair("lock", lock));
+                    }
+                }
+            }
+        }
         out.push_back(Pair("n", (int64_t)i));
         Object o;
         ScriptPubKeyToJSON(txout.scriptPubKey, o, true);
@@ -134,24 +165,54 @@ Value getrawtransaction(const Array& params, bool fHelp)
     if (!fVerbose)
         return strHex;
 
+    int nSupply = -1;
+    MapFractions mapFractions;
+    {
+        LOCK(cs_main);
+        CPegDB pegdb("r");
+        for(size_t i=0; i<tx.vout.size(); i++) {
+            auto fkey = uint320(hash, i);
+            CFractions fractions(0, CFractions::VALUE);
+            if (pegdb.ReadFractions(fkey, fractions)) {
+                if (fractions.Total() == tx.vout[i].nValue) {
+                    mapFractions[fkey] = fractions;
+                }
+            }
+        }
+
+        map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hashBlock);
+        if (mi != mapBlockIndex.end() && (*mi).second) {
+            CBlockIndex* pindex = (*mi).second;
+            nSupply = pindex->nPegSupplyIndex;
+        }
+    }
+    
     Object result;
     result.push_back(Pair("hex", strHex));
-    TxToJSON(tx, hashBlock, result);
+    TxToJSON(tx, hashBlock, mapFractions, nSupply, result);
     return result;
 }
 
 #ifdef ENABLE_WALLET
-Value listunspent(const Array& params, bool fHelp)
+Value listunspent2(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() > 3)
+    if (fHelp || params.size() > 4)
         throw runtime_error(
-            "listunspent [minconf=1] [maxconf=9999999]  [\"address\",...]\n"
-            "Returns array of unspent transaction outputs\n"
-            "with between minconf and maxconf (inclusive) confirmations.\n"
-            "Optionally filtered to only include txouts paid to specified addresses.\n"
-            "Results are an array of Objects, each of which has:\n"
-            "{txid, vout, scriptPubKey, amount, confirmations}");
+            "listunspent [minconf=1] [maxconf=9999999] [\"address\",...] [pegsupplyindex]\n"
+            "\t(wallet api)\n"
+            "\tReturns array of unspent transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tOptionally filtered to only include txouts paid to specified addresses.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "\t{txid, vout, scriptPubKey, amount, liquid, reserve, confirmations}");
 
+    if (params.size() > 0) {
+        if (params[0].type() == str_type) {
+            return listunspent1(params, fHelp);
+        }
+    }
+    
     RPCTypeCheck(params, list_of(int_type)(int_type)(array_type));
 
     int nMinDepth = 1;
@@ -166,7 +227,7 @@ Value listunspent(const Array& params, bool fHelp)
     if (params.size() > 2)
     {
         Array inputs = params[2].get_array();
-        BOOST_FOREACH(Value& input, inputs)
+        for(Value& input : inputs)
         {
             CBitcoinAddress address(input.get_str());
             if (!address.IsValid())
@@ -176,12 +237,20 @@ Value listunspent(const Array& params, bool fHelp)
            setAddress.insert(address);
         }
     }
+    
+    int nSupply = 0;
+    if (pindexBest) {
+        nSupply = pindexBest->nPegSupplyIndex;
+    }
+    if (params.size() > 3) {
+        nSupply = params[3].get_int();
+    }
 
     Array results;
     vector<COutput> vecOutputs;
     assert(pwalletMain != NULL);
-    pwalletMain->AvailableCoins(vecOutputs, false);
-    BOOST_FOREACH(const COutput& out, vecOutputs)
+    pwalletMain->AvailableCoins(vecOutputs, false, true, NULL);
+    for(const COutput& out : vecOutputs)
     {
         if (out.nDepth < nMinDepth || out.nDepth > nMaxDepth)
             continue;
@@ -221,6 +290,13 @@ Value listunspent(const Array& params, bool fHelp)
             }
         }
         entry.push_back(Pair("amount",ValueFromAmount(nValue)));
+        if (out.tx->vOutFractions.size() > size_t(out.i)) {
+            const CFractions & fractions = out.tx->vOutFractions[out.i].Ref();
+            if (fractions.Total() == nValue) {
+                entry.push_back(Pair("reserve", ValueFromAmount(fractions.Low(nSupply))));
+                entry.push_back(Pair("liquidity", ValueFromAmount(fractions.High(nSupply))));
+            }
+        }
         entry.push_back(Pair("confirmations",out.nDepth));
         entry.push_back(Pair("spendable", out.fSpendable));
         results.push_back(entry);
@@ -228,6 +304,113 @@ Value listunspent(const Array& params, bool fHelp)
 
     return results;
 }
+
+Value listfrozen2(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 4)
+        throw runtime_error(
+            "listfrozen [minconf=1] [maxconf=9999999] [\"address\",...] [pegsupplyindex]\n"
+            "\t(wallet api)\n"
+            "\tReturns array of frozen transaction outputs\n"
+            "\twith between minconf and maxconf (inclusive) confirmations.\n"
+            "\tOptionally filtered to only include txouts paid to specified addresses.\n"
+            "\tIf peg supply index is provided then liquid and reserve are calculated for specified peg value.\n"
+            "\tResults are an array of Objects, each of which has:\n"
+            "{txid, vout, scriptPubKey, amount, liquid, reserve, confirmations}");
+
+    RPCTypeCheck(params, list_of(int_type)(int_type)(array_type));
+
+    int nMinDepth = 1;
+    if (params.size() > 0)
+        nMinDepth = params[0].get_int();
+
+    int nMaxDepth = 9999999;
+    if (params.size() > 1)
+        nMaxDepth = params[1].get_int();
+
+    set<CBitcoinAddress> setAddress;
+    if (params.size() > 2)
+    {
+        Array inputs = params[2].get_array();
+        for(Value& input : inputs)
+        {
+            CBitcoinAddress address(input.get_str());
+            if (!address.IsValid())
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, string("Invalid BitBay address: ")+input.get_str());
+            if (setAddress.count(address))
+                throw JSONRPCError(RPC_INVALID_PARAMETER, string("Invalid parameter, duplicated address: ")+input.get_str());
+           setAddress.insert(address);
+        }
+    }
+
+    int nSupply = 0;
+    if (pindexBest) {
+        nSupply = pindexBest->nPegSupplyIndex;
+    }
+    if (params.size() > 3) {
+        nSupply = params[3].get_int();
+    }
+    
+    Array results;
+    vector<COutput> vecOutputs;
+    assert(pwalletMain != NULL);
+    pwalletMain->FrozenCoins(vecOutputs, false, false, NULL);
+    for(const COutput& out : vecOutputs)
+    {
+        if (out.nDepth < nMinDepth || out.nDepth > nMaxDepth)
+            continue;
+
+        if(setAddress.size())
+        {
+            CTxDestination address;
+            if(!ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
+                continue;
+
+            if (!setAddress.count(address))
+                continue;
+        }
+
+        int64_t nValue = out.tx->vout[out.i].nValue;
+        const CScript& pk = out.tx->vout[out.i].scriptPubKey;
+        Object entry;
+        entry.push_back(Pair("txid", out.tx->GetHash().GetHex()));
+        entry.push_back(Pair("vout", out.i));
+        CTxDestination address;
+        if (ExtractDestination(out.tx->vout[out.i].scriptPubKey, address))
+        {
+            entry.push_back(Pair("address", CBitcoinAddress(address).ToString()));
+            if (pwalletMain->mapAddressBook.count(address))
+                entry.push_back(Pair("account", pwalletMain->mapAddressBook[address]));
+        }
+        entry.push_back(Pair("scriptPubKey", HexStr(pk.begin(), pk.end())));
+        if (pk.IsPayToScriptHash())
+        {
+            CTxDestination address;
+            if (ExtractDestination(pk, address))
+            {
+                const CScriptID& hash = boost::get<CScriptID>(address);
+                CScript redeemScript;
+                if (pwalletMain->GetCScript(hash, redeemScript))
+                    entry.push_back(Pair("redeemScript", HexStr(redeemScript.begin(), redeemScript.end())));
+            }
+        }
+        entry.push_back(Pair("amount",ValueFromAmount(nValue)));
+        if (out.tx->vOutFractions.size() > size_t(out.i)) {
+            const CFractions & fractions = out.tx->vOutFractions[out.i].Ref();
+            if (fractions.Total() == nValue) {
+                entry.push_back(Pair("reserve", ValueFromAmount(fractions.Low(nSupply))));
+                entry.push_back(Pair("liquidity", ValueFromAmount(fractions.High(nSupply))));
+            }
+        }
+        entry.push_back(Pair("confirmations",out.nDepth));
+        entry.push_back(Pair("spendable", out.fSpendable));
+        entry.push_back(Pair("unlocktime", out.FrozenUnlockTime()));
+        results.push_back(entry);
+    }
+
+    return results;
+}
+
 #endif
 
 Value createrawtransaction(const Array& params, bool fHelp)
@@ -249,7 +432,7 @@ Value createrawtransaction(const Array& params, bool fHelp)
 
     CTransaction rawTx;
 
-    BOOST_FOREACH(Value& input, inputs)
+    for(Value& input : inputs)
     {
         const Object& o = input.get_obj();
 
@@ -272,7 +455,7 @@ Value createrawtransaction(const Array& params, bool fHelp)
     }
 
     set<CBitcoinAddress> setAddress;
-    BOOST_FOREACH(const Pair& s, sendTo)
+    for(const Pair& s : sendTo)
     {
         CBitcoinAddress address(s.name_);
         if (!address.IsValid())
@@ -315,7 +498,9 @@ Value decoderawtransaction(const Array& params, bool fHelp)
     }
 
     Object result;
-    TxToJSON(tx, 0, result);
+    MapFractions mapFractions;
+    
+    TxToJSON(tx, 0, mapFractions, -1, result);
 
     return result;
 }
@@ -394,16 +579,19 @@ Value signrawtransaction(const Array& params, bool fHelp)
     {
         CTransaction tempTx;
         MapPrevTx mapPrevTx;
+        MapFractions mapInputsFractions;
         CTxDB txdb("r");
+        CPegDB pegdb("r");
         map<uint256, CTxIndex> unused;
+        MapFractions fractionsUnused;
         bool fInvalid;
 
         // FetchInputs aborts on failure, so we go one at a time.
         tempTx.vin.push_back(mergedTx.vin[i]);
-        tempTx.FetchInputs(txdb, unused, false, false, mapPrevTx, fInvalid);
+        tempTx.FetchInputs(txdb, pegdb, unused, fractionsUnused, false, false, mapPrevTx, mapInputsFractions, fInvalid);
 
         // Copy results into mapPrevOut:
-        BOOST_FOREACH(const CTxIn& txin, tempTx.vin)
+        for(const CTxIn& txin : tempTx.vin)
         {
             const uint256& prevHash = txin.prevout.hash;
             if (mapPrevTx.count(prevHash) && mapPrevTx[prevHash].second.vout.size()>txin.prevout.n)
@@ -417,7 +605,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
     {
         fGivenKeys = true;
         Array keys = params[2].get_array();
-        BOOST_FOREACH(Value k, keys)
+        for(Value k : keys)
         {
             CBitcoinSecret vchSecret;
             bool fGood = vchSecret.SetString(k.get_str());
@@ -436,7 +624,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
     if (params.size() > 1 && params[1].type() != null_type)
     {
         Array prevTxs = params[1].get_array();
-        BOOST_FOREACH(Value& p, prevTxs)
+        for(Value& p : prevTxs)
         {
             if (p.type() != obj_type)
                 throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "expected object with {\"txid'\",\"vout\",\"scriptPubKey\"}");
@@ -536,7 +724,7 @@ Value signrawtransaction(const Array& params, bool fHelp)
             SignSignature(keystore, prevPubKey, mergedTx, i, nHashType);
 
         // ... and merge in other signatures:
-        BOOST_FOREACH(const CTransaction& txv, txVariants)
+        for(const CTransaction& txv : txVariants)
         {
             txin.scriptSig = CombineSignatures(prevPubKey, mergedTx, i, txin.scriptSig, txv.vin[i].scriptSig);
         }
@@ -562,6 +750,14 @@ Value sendrawtransaction(const Array& params, bool fHelp)
 
     RPCTypeCheck(params, list_of(str_type));
 
+    if (!pindexBest) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Blockchain is not in sync");
+    }
+    
+    if (pindexBest->GetBlockTime() < GetTime() - 90*60) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Blockchain is not in sync");
+    }
+    
     // parse hex string from parameter
     vector<unsigned char> txData(ParseHex(params[0].get_str()));
     CDataStream ssData(txData, SER_NETWORK, PROTOCOL_VERSION);
@@ -576,6 +772,17 @@ Value sendrawtransaction(const Array& params, bool fHelp)
     }
     uint256 hashTx = tx.GetHash();
 
+    uint256 wid;
+    int nExchangeOut = -1;
+    if (tx.IsExchangeTx(nExchangeOut, wid)) {
+        if (tx.nLockTime >0) {
+            unsigned int nMaxHeight = tx.nLockTime + Params().PegInterval(Params().nPegIntervalProbeHeight) -5;
+            if ((unsigned int)(pindexBest->nHeight) > nMaxHeight) {
+                throw JSONRPCError(RPC_MISC_ERROR, "Transaction is expired");
+            }
+        }
+    }
+    
     // See if the transaction is already in a block
     // or in the memory pool:
     CTransaction existingTx;

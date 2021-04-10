@@ -27,6 +27,13 @@ count(USE_EXCHANGE, 1) {
     }
 }
 
+count(USE_EXPLORER, 1) {
+    contains(USE_EXPLORER, 1) {
+        message(Building with USE_EXPLORER support)
+        CONFIG += explorer
+    }
+}
+
 # mac builds
 include(bitbay-mac.pri)
 
@@ -132,7 +139,7 @@ QMAKE_EXTRA_TARGETS += genleveldb
 QMAKE_CLEAN += $$PWD/src/leveldb/out-static/libleveldb.a; cd $$PWD/src/leveldb ; $(MAKE) clean
 
 # regenerate src/build.h
-!windows|contains(USE_BUILD_INFO, 1) {
+!msvc|contains(USE_BUILD_INFO, 1) {
     genbuild.depends = FORCE
     genbuild.commands = cd $$PWD; /bin/sh share/genbuild.sh $$OUT_PWD/build/build.h
     genbuild.target = $$OUT_PWD/build/build.h
@@ -243,8 +250,6 @@ LIBS += -lboost_chrono$$BOOST_LIB_SUFFIX
 unix:LIBS += -lz
 windows:LIBS += -lboost_chrono$$BOOST_LIB_SUFFIX
 
-#message($$LIBS)
-
 system($$QMAKE_LRELEASE -silent $$_PRO_FILE_)
 
 DISTFILES += \
@@ -254,6 +259,9 @@ DISTFILES += \
     src/makefile.mingw \
     src/makefile.osx \
     src/makefile.unix \
+    src/leveldb/Makefile \
+    src/leveldb/build_config.mk \
+    src/leveldb/build_detect_platform \
     .travis.yml \
     .appveyor.yml
 

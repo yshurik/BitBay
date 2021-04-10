@@ -132,7 +132,6 @@ extern json_spirit::Value verifymessage(const json_spirit::Array& params, bool f
 extern json_spirit::Value getreceivedbyaddress(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getreceivedbyaccount(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getbalance(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value movecmd(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value sendfrom(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value sendmany(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value addmultisigaddress(const json_spirit::Array& params, bool fHelp);
@@ -160,9 +159,16 @@ extern json_spirit::Value resendtx(const json_spirit::Array& params, bool fHelp)
 extern json_spirit::Value makekeypair(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value validatepubkey(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getnewpubkey(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value createbootstrap(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listunspent(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listunspent1(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listfrozen(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listfrozen1(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value balance(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value getrawtransaction(const json_spirit::Array& params, bool fHelp); // in rcprawtransaction.cpp
-extern json_spirit::Value listunspent(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listunspent2(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listfrozen2(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value createrawtransaction(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value decoderawtransaction(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value decodescript(const json_spirit::Array& params, bool fHelp);
@@ -178,5 +184,28 @@ extern json_spirit::Value getblockhash(const json_spirit::Array& params, bool fH
 extern json_spirit::Value getblock(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getblockbynumber(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getcheckpoint(const json_spirit::Array& params, bool fHelp);
+
+extern json_spirit::Value getpeginfo(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value getfractions(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value getfractionsbase64(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value getliquidityrate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value validaterawtransaction(const json_spirit::Array& params, bool fHelp);
+
+extern json_spirit::Value getpeglevel(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value makepeglevel(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value listdeposits(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value registerdeposit(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value updatetxout(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value updatepegbalances(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value movecoins(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value moveliquid(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value movereserve(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value removecoins(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value prepareliquidwithdraw(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value preparereservewithdraw(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value checkwithdrawstate(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value accountmaintenance(const json_spirit::Array& params, bool fHelp);
+
+extern json_spirit::Value faucet(const json_spirit::Array& params, bool fHelp);
 
 #endif

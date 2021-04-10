@@ -10,9 +10,10 @@
 #include "serialize.h"
 #include "sync.h"
 #include "wallet.h"
+#include "txdb-leveldb.h"
+#include "pegdb-leveldb.h"
 
 #include <boost/filesystem.hpp>
-#include <boost/foreach.hpp>
 
 using namespace std;
 using namespace boost;
@@ -163,6 +164,79 @@ bool CWalletDB::WriteAccount(const string& strAccount, const CAccount& account)
     return Write(make_pair(string("acc"), strAccount), account);
 }
 
+bool CWalletDB::ReadConsolidateEnabled(bool& on)
+{
+    bool ok = Read(string("consolidateison"), on);
+    if (!ok) {
+        on = true;
+        ok = true;
+    }
+    return ok;
+}
+
+bool CWalletDB::WriteConsolidateEnabled(bool on)
+{
+    return Write(string("consolidateison"), on);
+}
+
+bool CWalletDB::ReadRewardAddress(string& addr)
+{
+    return Read(string("rewardaddr"), addr);
+}
+
+bool CWalletDB::WriteRewardAddress(const string& addr)
+{
+    return Write(string("rewardaddr"), addr);
+}
+
+bool CWalletDB::ReadSupportEnabled(bool& on)
+{
+    bool ok = Read(string("supportison"), on);
+    if (!ok) {
+        on = true;
+        ok = true;
+    }
+    return ok;
+}
+
+bool CWalletDB::WriteSupportEnabled(bool on)
+{
+    return Write(string("supportison"), on);
+}
+
+bool CWalletDB::ReadSupportAddress(string& addr)
+{
+    bool ok = Read(string("supportaddr"), addr);
+    if (!ok || addr.empty()) {
+        addr = "bbHoxWZfj16d7xs4hrLfnYxMqLAJby9sr3";
+        if (TestNet()) {
+            addr = "moQxVBdteKScHgf2wdg7AjV4Lj1SAgwo5j";
+        }
+        ok = true;
+    }
+    return ok;
+}
+
+bool CWalletDB::WriteSupportAddress(const string& addr)
+{
+    return Write(string("supportaddr"), addr);
+}
+
+bool CWalletDB::ReadSupportPart(uint32_t& percent)
+{
+    bool ok = Read(string("supportpart"), percent);
+    if (!ok || percent > 100) {
+        percent = 10;
+        ok = true;
+    }
+    return ok;
+}
+
+bool CWalletDB::WriteSupportPart(const uint32_t& percent)
+{
+    return Write(string("supportpart"), percent);
+}
+
 bool CWalletDB::WriteAccountingEntry(const uint64_t nAccEntryNum, const CAccountingEntry& acentry)
 {
     return Write(boost::make_tuple(string("acentry"), acentry.strAccount, nAccEntryNum), acentry);
@@ -179,8 +253,9 @@ int64_t CWalletDB::GetAccountCreditDebit(const string& strAccount)
     ListAccountCreditDebit(strAccount, entries);
 
     int64_t nCreditDebit = 0;
-    BOOST_FOREACH (const CAccountingEntry& entry, entries)
+    for(const CAccountingEntry& entry : entries) {
         nCreditDebit += entry.nCreditDebit;
+    }
 
     return nCreditDebit;
 }
@@ -248,7 +323,7 @@ CWalletDB::ReorderTransactions(CWallet* pwallet)
     }
     list<CAccountingEntry> acentries;
     ListAccountCreditDebit("", acentries);
-    BOOST_FOREACH(CAccountingEntry& entry, acentries)
+    for(CAccountingEntry& entry : acentries)
     {
         txByTime.insert(make_pair(entry.nTime, TxPair((CWalletTx*)0, &entry)));
     }
@@ -279,7 +354,7 @@ CWalletDB::ReorderTransactions(CWallet* pwallet)
         else
         {
             int64_t nOrderPosOff = 0;
-            BOOST_FOREACH(const int64_t& nOffsetStart, nOrderPosOffsets)
+            for(const int64_t& nOffsetStart : nOrderPosOffsets)
             {
                 if (nOrderPos >= nOffsetStart)
                     ++nOrderPosOff;
@@ -326,7 +401,7 @@ public:
 
 bool
 ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
-             CWalletScanState &wss, string& strType, string& strErr)
+             CWalletScanState &wss, string& strType, string& strErr, CTxDB& txdb, CPegDB& pegdb)
 {
     try {
         // Unserialize
@@ -345,8 +420,43 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
             ssKey >> hash;
             CWalletTx& wtx = pwallet->mapWallet[hash];
             ssValue >> wtx;
-            if (wtx.CheckTransaction() && (wtx.GetHash() == hash))
+            if (wtx.CheckTransaction() && (wtx.GetHash() == hash)) {
+                wtx.vOutFractions.resize(wtx.vout.size());
+                for(size_t i=0; i < wtx.vout.size(); i++) {
+                    wtx.vOutFractions[i].Init(wtx.vout[i].nValue);
+                    CFractions& fractions = wtx.vOutFractions[i].Ref();
+                    auto fkey = uint320(hash, i);
+                    bool have = pegdb.ReadFractions(fkey, fractions, true /*must_have*/);
+                    if (!have) {
+                        wtx.vOutFractions[i].UnRef();
+                    }
+                    // it is ok if fractions not read:
+                    // if pruned then the outputs is spent
+                    // if refer prev tx in wallet(mempool) - update later
+                    if (have && wtx.IsSpent(i)) {
+                        CTxIndex txindex;
+                        if (txdb.ReadTxIndex(hash, txindex)) {
+                            if (i < txindex.vSpent.size()) {
+                                CDiskTxPos & txpos = txindex.vSpent[i];
+                                CTransaction txSpend;
+                                if (txSpend.ReadFromDisk(txpos)) {
+                                    uint256 hashSpent = txSpend.GetHash();
+                                    CTxIndex txindexSpent;
+                                    if (txdb.ReadTxIndex(hashSpent, txindexSpent)) {
+                                        unsigned int nTxNum = 0;
+                                        int nHeight = txindexSpent.GetHeightInMainChain(&nTxNum, hashSpent);
+                                        int nDepth = pindexBest->nHeight - nHeight + 1;
+                                        if (nDepth > Params().MaxReorganizationDepth()) {
+                                            wtx.vOutFractions[i].UnRef();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 wtx.BindWallet(pwallet);
+            }
             else
             {
                 pwallet->mapWallet.erase(hash);
@@ -602,6 +712,9 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
             return DB_CORRUPT;
         }
 
+        CTxDB txdb("r");
+        CPegDB pegdb("r");
+        
         while (true)
         {
             // Read next record
@@ -618,7 +731,7 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
 
             // Try to be tolerant of single corrupt records:
             string strType, strErr;
-            if (!ReadKeyValue(pwallet, ssKey, ssValue, wss, strType, strErr))
+            if (!ReadKeyValue(pwallet, ssKey, ssValue, wss, strType, strErr, txdb, pegdb))
             {
                 // losing keys is considered a catastrophic error, anything else
                 // we assume the user can live with:
@@ -637,6 +750,27 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
                 LogPrintf("%s\n", strErr);
         }
         pcursor->close();
+        
+        bool fConsolidateIsOn;
+        if (ReadConsolidateEnabled(fConsolidateIsOn)) {
+            pwallet->SetConsolidateEnabled(fConsolidateIsOn, false/*write*/);
+        }
+        string sRewardAddr;
+        if (ReadRewardAddress(sRewardAddr)) {
+            pwallet->SetRewardAddress(sRewardAddr, false/*write*/);
+        }
+        bool fSupportIsOn;
+        if (ReadSupportEnabled(fSupportIsOn)) {
+            pwallet->SetSupportEnabled(fSupportIsOn, false/*write*/);
+        }
+        string sSupportAddr;
+        if (ReadSupportAddress(sSupportAddr)) {
+            pwallet->SetSupportAddress(sSupportAddr, false/*write*/);
+        }
+        uint32_t nSupportPart;
+        if (ReadSupportPart(nSupportPart)) {
+            pwallet->SetSupportPart(nSupportPart, false/*write*/);
+        }
     }
     catch (boost::thread_interrupted) {
         throw;
@@ -662,9 +796,9 @@ DBErrors CWalletDB::LoadWallet(CWallet* pwallet)
     if ((wss.nKeys + wss.nCKeys) != wss.nKeyMeta)
         pwallet->nTimeFirstKey = 1; // 0 would be considered 'no value'
 
-
-    BOOST_FOREACH(uint256 hash, wss.vWalletUpgrade)
+    for(uint256 hash : wss.vWalletUpgrade) {
         WriteTx(hash, pwallet->mapWallet[hash]);
+    }
 
     // Rewrite encrypted wallets of versions 0.4.0 and 0.5.0rc:
     if (wss.fIsEncrypted && (wss.nFileVersion == 40000 || wss.nFileVersion == 50000))
@@ -831,8 +965,11 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys)
     CWallet dummyWallet;
     CWalletScanState wss;
 
+    CTxDB txdb("r");
+    CPegDB pegdb("r");
+    
     DbTxn* ptxn = dbenv.TxnBegin();
-    BOOST_FOREACH(CDBEnv::KeyValPair& row, salvagedData)
+    for(CDBEnv::KeyValPair& row : salvagedData)
     {
         if (fOnlyKeys)
         {
@@ -840,7 +977,7 @@ bool CWalletDB::Recover(CDBEnv& dbenv, std::string filename, bool fOnlyKeys)
             CDataStream ssValue(row.second, SER_DISK, CLIENT_VERSION);
             string strType, strErr;
             bool fReadOK = ReadKeyValue(&dummyWallet, ssKey, ssValue,
-                                        wss, strType, strErr);
+                                        wss, strType, strErr, txdb, pegdb);
             if (!IsKeyType(strType))
                 continue;
             if (!fReadOK)

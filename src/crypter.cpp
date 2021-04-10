@@ -9,7 +9,6 @@
 
 #include <string>
 #include <vector>
-#include <boost/foreach.hpp>
 #include <openssl/opensslv.h>     // For using openssl 1.0 and 1.1 branches.
 #include <openssl/aes.h>
 #include <openssl/evp.h>
@@ -289,7 +288,7 @@ bool CCryptoKeyStore::EncryptKeys(CKeyingMaterial& vMasterKeyIn)
             return false;
 
         fUseCrypto = true;
-        BOOST_FOREACH(KeyMap::value_type& mKey, mapKeys)
+        for(KeyMap::value_type& mKey : mapKeys)
         {
             const CKey &key = mKey.second;
             CPubKey vchPubKey = key.GetPubKey();

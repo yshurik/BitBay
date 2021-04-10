@@ -61,7 +61,7 @@ std::string static EncodeDumpTime(int64_t nTime) {
 
 std::string static EncodeDumpString(const std::string &str) {
     std::stringstream ret;
-    BOOST_FOREACH(unsigned char c, str) {
+    for(unsigned char c : str) {
         if (c <= 32 || c >= 128 || c == '%') {
             ret << '%' << HexStr(&c, &c + 1);
         } else {
@@ -174,7 +174,7 @@ Value importaddress(const Array& params, bool fHelp)
     if (params.size() > 1)
         strLabel = params[1].get_str();
 
-    // Whether to perform rescan after import
+    // Whether to perform rescan after import
     bool fRescan = true;
     if (params.size() > 2)
         fRescan = params[2].get_bool();
@@ -190,7 +190,7 @@ Value importaddress(const Array& params, bool fHelp)
         pwalletMain->SetAddressBookName(dest, strLabel);
 
         if (!pwalletMain->AddWatchOnly(dest))
-            throw JSONRPCError(RPC_WALLET_ERROR, "Error adding address to wallet");
+            throw JSONRPCError(RPC_WALLET_ERROR, "Error adding address to wallet");
 
         if (fRescan)
         {

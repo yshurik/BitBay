@@ -10,8 +10,6 @@ bool fConfChange = false;
 unsigned int nNodeLifespan = 7;
 unsigned int nMinerSleep = 500;
 bool fUseFastIndex = true;
-unsigned int nDerivationMethodIndex = 0;
-bool fMinimizeCoinAge = false;
 
 extern bool fPrintToConsole;
 extern void noui_connect();

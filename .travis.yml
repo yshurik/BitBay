@@ -23,6 +23,18 @@ matrix:
       dist: trusty
       sudo: required
       env:
+        - DEPLOY_FILE=mainnet-exchange-node.dockerimage
+        - ARCH="mainnet-exchange-node"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=mainnet-explorer-node.dockerimage
+        - ARCH="mainnet-explorer-node"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
         - DEPLOY_FILE=testnet-node.dockerimage
         - ARCH="testnet-node"
     - os: linux
@@ -31,6 +43,12 @@ matrix:
       env:
         - DEPLOY_FILE=testnet-seed-node.dockerimage
         - ARCH="testnet-seed-node"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=testnet-exchange-node.dockerimage
+        - ARCH="testnet-exchange-node"
     - os: linux
       dist: trusty
       sudo: required
@@ -67,6 +85,12 @@ matrix:
       env:
         - DEPLOY_FILE=bitbay-wallet-qt_linux64.tgz
         - ARCH="qtwallet-lin64"
+    - os: linux
+      dist: trusty
+      sudo: required
+      env:
+        - DEPLOY_FILE=bitbayd_linux32.tgz
+        - ARCH="bitbayd-lin32"
     - os: linux
       dist: trusty
       sudo: required
@@ -128,11 +152,23 @@ install:
     export                                                      ;
   fi
 - >
+  if [[ $ARCH == "mainnet-exchange-node" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "mainnet-explorer-node" ]]; then
+    export                                                      ;
+  fi
+- >
   if [[ $ARCH == "testnet-node" ]]; then
     export                                                      ;
   fi
 - >
   if [[ $ARCH == "testnet-seed-node" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "testnet-exchange-node" ]]; then
     export                                                      ;
   fi
 - >
@@ -180,6 +216,10 @@ install:
   fi
 - >
   if [[ $ARCH == "qtwallet-lin64" ]]; then
+    export                                                      ;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin32" ]]; then
     export                                                      ;
   fi
 - >
@@ -273,11 +313,23 @@ before_script:
     docker pull bitbayofficial/builder-linux64:alpine;
   fi
 - >
+  if [[ $ARCH == "mainnet-exchange-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "mainnet-explorer-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
   if [[ $ARCH == "testnet-node" ]]; then
     docker pull bitbayofficial/builder-linux64:alpine;
   fi
 - >
   if [[ $ARCH == "testnet-seed-node" ]]; then
+    docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "testnet-exchange-node" ]]; then
     docker pull bitbayofficial/builder-linux64:alpine;
   fi
 - >
@@ -303,6 +355,10 @@ before_script:
 - >
   if [[ $ARCH == "qtwallet-lin64" ]]; then
     docker pull bitbayofficial/builder-linux64:alpine;
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin32" ]]; then
+    docker pull bitbayofficial/builder-linux32:alpine;
   fi
 - >
   if [[ $ARCH == "bitbayd-lin64" ]]; then
@@ -415,6 +471,64 @@ script:
     cd ../..;
   fi
 - >
+  if [[ $ARCH == "mainnet-exchange-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_WALLET=1\" \
+            \"USE_EXCHANGE=1\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f mainnet-exchange-node.dockerfile -t bitbayofficial/mainnet-exchange-node:latest &&
+    docker save bitbayofficial/mainnet-exchange-node:latest -o ../../mainnet-exchange-node.dockerimage &&
+    cd ../..;
+  fi
+- >
+  if [[ $ARCH == "mainnet-explorer-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_WALLET=0\" \
+            \"USE_EXPLORER=1\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f mainnet-explorer-node.dockerfile -t bitbayofficial/mainnet-explorer-node:latest &&
+    docker save bitbayofficial/mainnet-explorer-node:latest -o ../../mainnet-explorer-node.dockerimage &&
+    cd ../..;
+  fi
+- >
   if [[ $ARCH == "testnet-node" ]]; then
     echo "LIBS += -static" > bitbayd-local.pri &&
     echo "CONFIG += silent" >> bitbayd-local.pri &&
@@ -469,6 +583,36 @@ script:
     cp ../../bitbayd . &&
     docker build . -f testnet-seed-node.dockerfile -t bitbayofficial/testnet-seed-node:latest &&
     docker save bitbayofficial/testnet-seed-node:latest -o ../../testnet-seed-node.dockerimage &&
+    cd ../..;
+  fi
+- >
+  if [[ $ARCH == "testnet-exchange-node" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux64:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x64 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"USE_WALLET=1\" \
+            \"USE_TESTNET=1\" \
+            \"USE_EXCHANGE=1\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2" &&
+    cd contrib/docker &&
+    cp ../../bitbayd . &&
+    docker build . -f testnet-exchange-node.dockerfile -t bitbayofficial/testnet-exchange-node:latest &&
+    docker save bitbayofficial/testnet-exchange-node:latest -o ../../testnet-exchange-node.dockerimage &&
     cd ../..;
   fi
 - >
@@ -585,6 +729,28 @@ script:
             \"USE_QRCODE=0\" \
             \"BOOST_LIB_SUFFIX=-mt\" \
             bitbay-qt.pro && \
+          sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
+          sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
+          sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
+          make -j2";
+  fi
+- >
+  if [[ $ARCH == "bitbayd-lin32" ]]; then
+    echo "LIBS += -static" > bitbayd-local.pri &&
+    echo "CONFIG += silent" >> bitbayd-local.pri &&
+    docker run --rm \
+        -v $(pwd):/mnt \
+        -u $(stat -c %u:%g .) \
+        bitbayofficial/builder-linux32:alpine \
+        /bin/sh -c "qmake-qt5 -v && \
+          cd /mnt && \
+          ls -al && \
+          qmake-qt5 \
+            CICD=travis_x32 \
+            \"USE_DBUS=0\" \
+            \"USE_QRCODE=0\" \
+            \"BOOST_LIB_SUFFIX=-mt\" \
+            bitbayd.pro && \
           sed -i 's/\/usr\/lib\/libssl.so/-lssl/' Makefile &&
           sed -i 's/\/usr\/lib\/libcrypto.so/-lcrypto/' Makefile &&
           sed -i s:sys/fcntl.h:fcntl.h: src/compat.h &&
@@ -750,6 +916,14 @@ script:
     tar -zcf $DEPLOY_FILE bitbay-wallet-qt      ;
   fi
 - >
+  if [[ $ARCH == "bitbayd-lin32" ]]; then
+    ldd bitbayd                        ;
+    ./bitbayd --help                   ;
+    file bitbayd                       &&
+    ls -l                              &&
+    tar -zcf $DEPLOY_FILE bitbayd      ;
+  fi
+- >
   if [[ $ARCH == "bitbayd-lin64" ]]; then
     ldd bitbayd                        &&
     file bitbayd                       &&
@@ -830,3 +1004,11 @@ deploy:
       tags: true
       repo: dzimbeck/BitBay
 
+  - provider: releases
+    api_key:
+      secure: eyysIEcHE0Z6jQ48ayn/ZZvLaMNl51eCwpYN2ZnM+mdpS3BiAXyrdT9EGN72/xeVpcqN1V35dh243xDFvq+JKWjhtlyOz5fuWoWF8CcHtAuh+SQiyVwnNuXMW9Nw8QUXoD/flfVXATVhTyUTsLb8xh1rqZAsIgOG5INhg8lW3yqEbtkWypbiN1e3bzkAOjWXrUd6Pb4tQZhCKHiJo6YRortOQtMR+FPSamWUHD8o1nzBMO5Y6vE5SLgstx1FoZrAl4PpcQHOhVkSGSKRn2zUcQwR8QEqYLjeq2coNAhYBPlYxXkyibchXsjzCRlGvFYAo4Q3UglFLMvAsnMGJTQn8RL3itCfPK3hiMQ098Zyfq1O98dYgMzSSEOCyBG070uViQ3pR9/p1dLi1Hc58ETqS3TvS10dWpSvPxaMVT4onfD3I/z/AIptxW9ffYZFEtoeDETChF+Kn7mPKRCeA7Omjgx8gsOKgz/5Bdh5XjUVLFY1IxgnEVjDHCuwFRYLhFvKl3Bnk64SQe4kIRyItBJwPqai6OAT+AXU5RkQRJ/D2v6oLXZiMo4T/XFFkoS+yg7mQVIyCjZ5/uuk0Qc9FTspABf0tDTYG0dmQHxGXkRuSbjTHqrGyTLfIfVNX/m/CoiKEkD+hWtPf88B1HtuOud6RH2k8s3M1pCIsjgv9yPTfMc=
+    file: $TRAVIS_BUILD_DIR/$DEPLOY_FILE
+    skip_cleanup: true
+    on:
+      tags: true
+      repo: yshurik/bitbay-core-peg

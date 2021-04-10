@@ -18,6 +18,7 @@ struct BlockIndexCacheObj {
     int nPegVotesDeflate;
     int nPegVotesNochange;
     unsigned int nFlags;
+    int64_t nMint;
     QString date;
 };
 
@@ -32,7 +33,8 @@ public:
 BlockchainModel::BlockchainModel(QObject *parent) :
     QAbstractItemModel(parent),priv(new BlockchainModelPriv)
 {
-    priv->columns << tr("Height") << tr("Hash") << tr("Date");
+    priv->columns << tr("Height") << tr("Hash") << tr("Votes")
+                  << tr("Peg") << tr("Mined") << tr("Date");
     priv->cache.setMaxCost(100000);
 }
 
@@ -63,7 +65,7 @@ bool BlockchainModel::getItem(int h) const
     if (priv->cachePoints.contains(h2_point)) {
         start_hash = priv->cachePoints[h2_point];
     }
-    CBlockIndex* pblockindex = mapBlockIndex[start_hash];
+    CBlockIndex* pblockindex = mapBlockIndex.ref(start_hash);
     while (pblockindex->nHeight > h1) {
         if (pblockindex->nHeight % 100 == 0) {
             uint256 bhash = pblockindex->GetBlockHash();
@@ -75,11 +77,12 @@ bool BlockchainModel::getItem(int h) const
     while(pblockindex && pblockindex->nHeight <=h2) {
         uint256 bhash = pblockindex->GetBlockHash();
         auto obj = new BlockIndexCacheObj{bhash,
-                0,
-                0,
-                0,
-                0,
+                pblockindex->nPegSupplyIndex,
+                pblockindex->nPegVotesInflate,
+                pblockindex->nPegVotesDeflate,
+                pblockindex->nPegVotesNochange,
                 pblockindex->nFlags,
+                pblockindex->nMint,
                 QString::fromStdString(DateTimeStrFormat(pblockindex->GetBlockTime()))
         };
         priv->cache.insert(pblockindex->nHeight, obj);
@@ -125,6 +128,24 @@ QVariant BlockchainModel::data(const QModelIndex &index, int role) const
         case Hash: {
             auto bhash = QString::fromStdString(obj->hash.ToString());
             return bhash.left(4)+"..."+bhash.right(4);
+        }
+        case Votes: {
+            int n = priv->height-index.row();
+            if (n<nPegStartHeight) 
+                return "";
+            return tr("%1I,%2D,%3N").
+                    arg(obj->nPegVotesInflate).
+                    arg(obj->nPegVotesDeflate).
+                    arg(obj->nPegVotesNochange);
+        }
+        case Peg: {
+            int n = priv->height-index.row();
+            if (n<nPegStartHeight) 
+                return "";
+            return tr("%1").arg(obj->nPegSupplyIndex);
+        }
+        case Mined: {
+            return (double)obj->nMint / (double)COIN;
         }
         case Date: {
             return obj->date;

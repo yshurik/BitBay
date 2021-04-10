@@ -45,6 +45,9 @@ static QSplashScreen *splashref;
 static void ThreadSafeMessageBox(const std::string& message, const std::string& caption, unsigned int style)
 {
     // Message from network thread
+    if(splashref && splashref->isVisible()) {
+       splashref->setVisible(false);
+    }
     if(guiref)
     {
         bool modal = (style & CClientUIInterface::MODAL);
