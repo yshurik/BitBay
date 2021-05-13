@@ -1709,7 +1709,7 @@ void StartNode(boost::thread_group& threadGroup)
         // at least 1MB for messages processing (musl 80KB)
         boost::thread::attributes nbetmsg_thread_attrs;
         nbetmsg_thread_attrs.set_stack_size(1096*1096); 
-        auto netmsg_thread = new thread(nbetmsg_thread_attrs,
+        auto netmsg_thread = new boost::thread(nbetmsg_thread_attrs,
                                        boost::bind(&TraceThread<void (*)()>, "msghand", &ThreadMessageHandler));
         threadGroup.add_thread(netmsg_thread);
     }

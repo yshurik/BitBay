@@ -6,7 +6,7 @@ qt {
     QMAKE_INFO_PLIST = share/qt/Info.plist
 }
 
-LEVELDB_CXXFLAGS = -mmacosx-version-min=10.9
+LEVELDB_CXXFLAGS = -std=gnu++11 -isysroot $$QMAKE_MAC_SDK_PATH -Wno-unused-parameter -mmacosx-version-min=10.9
 
 # mac: default path to brew packages
 INCLUDEPATH += /usr/local/opt/boost/include
@@ -19,7 +19,8 @@ LIBS += -L/usr/local/opt/openssl/lib
 LIBS += -L/usr/local/opt/miniupnpc/lib
 LIBS += -L/usr/local/opt/qrencode/lib
 
-QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
+#QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.9
+#QMAKE_MAC_SDK = macosx10.13
 
 LIBS += -framework Foundation -framework ApplicationServices -framework AppKit
 DEFINES += MAC_OSX MSG_NOSIGNAL=0

@@ -12,6 +12,7 @@
 
 #include <qapplication.h>
 #include <qpainter.h>
+#include <qpainterpath.h>
 #include <qmath.h>
 
 #if QT_VERSION < 0x040601
